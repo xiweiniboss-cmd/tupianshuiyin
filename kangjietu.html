@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>隐印 · 抗截图水印</title>
+<meta name="description" content="抗截图、抗重写的图片盲水印。浏览器本地运算。"/>
+<meta name="theme-color" content="#F3EEE4"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#F3EEE4; --elev:#FAF7F1; --subtle:#EBE4D6; --fg:#1A1714;
+  --muted:#7A7268; --subtle-fg:#A39B90; --accent:#B43A32; --accent-fg:#F3EEE4;
+  --border:#D9D1C4; --ring:#B43A32;
+  --sans:"Noto Sans SC","Segoe UI",system-ui,sans-serif;
+  --display:"Noto Serif SC","Songti SC",serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --shadow:0 0 0 1px rgba(26,23,20,.06),0 1px 2px -1px rgba(26,23,20,.06),0 2px 4px 0 rgba(26,23,20,.04);
+}
+* { box-sizing:border-box; }
+html,body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+body {
+  min-height:100dvh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(180,58,50,.06), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(26,23,20,.04), transparent 45%);
+}
+button { font-family:inherit; cursor:pointer; }
+button:disabled { cursor:not-allowed; opacity:.4; }
+input, textarea { font-family:inherit; }
+h1 { font-family:var(--display); font-weight:500; letter-spacing:-.03em; text-wrap:balance; }
+.wrap { max-width:960px; margin:0 auto; padding:0 20px; }
+header { border-bottom:1px solid color-mix(in oklab, var(--border) 80%, transparent); }
+.nav { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; }
+.brand { display:flex; align-items:center; gap:12px; }
+.brand h2 { font-family:var(--display); font-size:20px; margin:0; font-weight:500; }
+.brand p { margin:0; font-size:12px; color:var(--muted); }
+.hero { padding:40px 0 24px; max-width:640px; }
+.hero h1 { font-size:clamp(28px,5vw,40px); margin:0; line-height:1.15; }
+.hero h1 span { color:var(--accent); }
+.hero p { color:var(--muted); line-height:1.6; margin:12px 0 0; }
+.pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.pill { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+.pill.on { background:rgba(180,58,50,.12); color:var(--accent); border-color:transparent; }
+.tabs { display:flex; gap:4px; background:var(--subtle); padding:4px; border-radius:16px; max-width:420px; }
+.tabs button { flex:1; height:36px; border:0; background:transparent; border-radius:12px; color:var(--muted); font-size:14px; font-weight:500; }
+.tabs button.active { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
+.grid { display:grid; gap:32px; margin-top:28px; }
+@media (min-width:860px){ .grid { grid-template-columns:1.1fr .9fr; } }
+.drop {
+  min-height:220px; border-radius:16px; background:var(--elev); box-shadow:var(--shadow);
+  display:flex; align-items:center; justify-content:center; text-align:center; position:relative; overflow:hidden;
+}
+.drop img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:
+  repeating-conic-gradient(#e7e0d4 0 8px,#f3eee4 8px 16px); }
+.drop .ph { padding:24px; color:var(--muted); font-size:14px; }
+.drop .ph small { display:block; margin-top:6px; color:var(--subtle-fg); font-size:12px; }
+.lbl { font-size:14px; font-weight:500; display:flex; justify-content:space-between; }
+.hint { font-size:12px; color:var(--subtle-fg); }
+label.stack { display:flex; flex-direction:column; gap:8px; }
+textarea, input[type=text] {
+  width:100%; border:1px solid var(--border); background:var(--elev); border-radius:12px;
+  padding:10px 12px; font-size:14px; color:var(--fg); box-shadow:var(--shadow);
+}
+textarea { min-height:110px; resize:vertical; }
+textarea:focus, input:focus { outline:2px solid color-mix(in oklab, var(--ring) 50%, transparent); outline-offset:1px; }
+.row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.row3 button {
+  height:44px; border:0; border-radius:12px; background:var(--elev); color:var(--muted); box-shadow:var(--shadow); font-size:14px;
+}
+.row3 button.on { background:var(--fg); color:var(--bg); box-shadow:none; }
+.switch-row {
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  background:var(--elev); border-radius:16px; padding:10px 12px; box-shadow:var(--shadow);
+}
+.actions { display:flex; flex-wrap:wrap; gap:8px; }
+.btn {
+  height:44px; padding:0 16px; border:0; border-radius:12px; background:var(--accent); color:var(--accent-fg);
+  font-size:14px; font-weight:500; display:inline-flex; align-items:center; gap:8px;
+}
+.btn.sec { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
+.btn.ghost { background:transparent; color:var(--muted); }
+.result {
+  margin-top:32px; display:grid; gap:20px;
+}
+@media (min-width:860px){ .result { grid-template-columns:1.1fr .9fr; } }
+.compare { position:relative; border-radius:16px; overflow:hidden; background:var(--subtle); box-shadow:var(--shadow); }
+.compare img { display:block; width:100%; }
+.compare .before { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
+.panel { background:var(--elev); border-radius:24px; padding:20px; box-shadow:var(--shadow); }
+.panel h3 { font-family:var(--display); margin:0 0 8px; font-weight:500; }
+.meta { display:flex; justify-content:space-between; align-items:center; background:var(--subtle); border-radius:12px; padding:10px 12px; }
+.meta b { font-family:var(--mono); font-size:20px; font-variant-numeric:tabular-nums; }
+.about { max-width:640px; color:var(--muted); line-height:1.7; font-size:14px; }
+.about a { color:var(--fg); }
+footer { border-top:1px solid color-mix(in oklab, var(--border) 80%, transparent); margin-top:48px; }
+footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.toast {
+  position:fixed; top:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg);
+  padding:8px 14px; border-radius:999px; font-size:13px; opacity:0; pointer-events:none; transition:opacity .2s;
+  z-index:20;
+}
+.toast.show { opacity:1; }
+.hidden { display:none !important; }
+.file { position:absolute; inset:0; opacity:0; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<header><div class="wrap nav">
+  <div class="brand">
+    <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="3" y="3" width="58" height="58" rx="4" fill="none" stroke="#B43A32" stroke-width="3"/>
+      <rect x="9" y="9" width="46" height="46" rx="2" fill="none" stroke="#B43A32" stroke-width="1.4"/>
+      <path d="M22 18h20M32 18v28M22 46h20M20 28c6 8 18 8 24 0" fill="none" stroke="#B43A32" stroke-width="2.4" stroke-linecap="square"/>
+    </svg>
+    <div><h2>隐印</h2><p>抗截图水印</p></div>
+  </div>
+  <a class="btn ghost" href="./index.html" style="text-decoration:none">普通盲水印</a>
+</div></header>
+<main class="wrap">
+  <section class="hero">
+    <h1>截了图，也还在<span>。</span></h1>
+    <p>两层水印：一层平铺扩频图样，截图、裁切、缩放、翻转后都能自己对齐找回；一层 DWT-DCT-SVD 存完整文本。别人用别的密钥再写一遍，也盖不掉你的。</p>
+    <div class="pills"><span class="pill on">抗截图</span><span class="pill">抗重写</span><span class="pill">本地运算</span></div>
+  </section>
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="embed">嵌入</button>
+    <button type="button" data-tab="extract">提取</button>
+    <button type="button" data-tab="about">原理</button>
+  </div>
+
+  <section id="tab-embed">
+    <div class="grid">
+      <div>
+        <div class="lbl" style="margin-bottom:8px"><span>原图</span><span class="hint" id="src-hint"></span></div>
+        <div class="drop" id="src-drop">
+          <div class="ph">拖入、点选或粘贴图片<small>PNG / JPEG / WebP · 建议 400px 以上</small></div>
+          <input class="file" id="src-file" type="file" accept="image/*"/>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <form method="dialog" id="embed-form" style="display:flex;flex-direction:column;gap:16px">
+        <label class="stack"><span class="lbl">水印文本 <span class="hint" id="cap-hint"></span></span>
+          <textarea id="wm-text">隐印 · 提取无须原图</textarea>
+        </label>
+        <label class="stack">密钥
+          <input type="text" id="password" value="" autocomplete="off"/>
+          <span class="hint">已随机生成，请保存好。别人知道密钥就能针对性抹掉水印，所以不要用 1 这类默认值。</span>
+        </label>
+        <div>
+          <div class="lbl" style="margin-bottom:8px">强度</div>
+          <div class="row3" id="strength">
+            <button type="button" data-k="subtle">轻</button>
+            <button type="button" data-k="standard" class="on">标准</button>
+            <button type="button" data-k="robust">强</button>
+          </div>
+          <p class="hint" id="str-hint" style="margin:8px 0 0">原库默认 · d1=36 d2=20</p>
+        </div>
+        <div class="switch-row">
+          <div><div style="font-size:14px;font-weight:500">快速模式</div><div class="hint">略快，抗攻击稍弱</div></div>
+          <input type="checkbox" id="fast"/>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="embed-btn">写入水印</button>
+          <button type="button" class="btn sec" id="sample-btn">试用样张</button>
+        </div>
+        </form>
+      </div>
+    </div>
+    <div class="result hidden" id="embed-result">
+      <div class="compare" id="compare"></div>
+      <div class="panel">
+        <h3>已写入</h3>
+        <p class="hint">抗截图层装得下前 16 字节（约 5 个汉字），截图后也能找回；完整文本在第二层，图片没被裁切缩放时能读出。</p>
+        <div class="meta"><div><div class="hint">抗截图层内容</div><b id="wm-len-out">0</b></div>
+          <button type="button" class="btn ghost" id="copy-len">复制</button></div>
+        <div style="height:12px"></div>
+        <button type="button" class="btn" id="dl-btn">下载 PNG</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-extract" class="hidden">
+    <div class="grid">
+      <div>
+        <div class="lbl" style="margin-bottom:8px"><span>带水印的图</span><span class="hint" id="ex-hint"></span></div>
+        <div class="drop" id="ex-drop">
+          <div class="ph">拖入要提取的图片</div>
+          <input class="file" id="ex-file" type="file" accept="image/*"/>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <label class="stack">密钥
+          <input type="text" id="ex-password" value="" autocomplete="off" placeholder="写入时用的密钥"/>
+        </label>
+        <div>
+          <div class="lbl" style="margin-bottom:8px">强度（只影响完整文本层）</div>
+          <div class="row3" id="ex-strength">
+            <button type="button" data-k="subtle">轻</button>
+            <button type="button" data-k="standard" class="on">标准</button>
+            <button type="button" data-k="robust">强</button>
+          </div>
+        </div>
+        <div class="switch-row">
+          <div><div style="font-size:14px;font-weight:500">快速模式</div><div class="hint">须与嵌入时相同</div></div>
+          <input type="checkbox" id="ex-fast"/>
+        </div>
+        <button type="button" class="btn" id="extract-btn">提取水印</button>
+        <p class="hint" id="ex-status" style="margin:0"></p>
+        <div class="panel hidden" id="extract-out">
+          <div class="lbl">提取结果 <button type="button" class="btn ghost" id="copy-text">复制</button></div>
+          <p id="extract-text" style="font-family:var(--mono);font-size:14px;line-height:1.6;word-break:break-word;margin:8px 0 0"></p>
+          <p class="hint" id="extract-full" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-about" class="hidden about">
+    <p><b>抗截图层。</b>由密钥生成一组 128×128 的伪随机图样（2×2 像素一格），平铺满整张图，按纹理多少调节强弱叠在亮度上。截图会裁切、缩放，但图样的周期还在：提取时先用自相关量出周期（也就是缩放比例），把整张图按周期折叠成一块，再用 FFT 找出裁切偏移，最后逐比特相关解码，CRC16 校验通过才算数。翻转和 90° 旋转也会自动试。</p>
+    <p><b>抗重写。</b>不同密钥的图样彼此近似正交，后写的水印只是叠加，不会覆盖你的。所以密钥一定要保密：知道密钥的人可以把图样减掉。</p>
+    <p><b>完整文本层。</b>用 DWT-DCT-SVD（移植自 <a href="https://github.com/guofei9987/blind_watermark" target="_blank" rel="noreferrer">guofei9987/blind_watermark</a>，MIT）存完整文本，图片没被裁切缩放时能读出。</p>
+    <p><b>仍然扛不住的。</b>任意角度旋转、透视变形（比如对着屏幕拍照）、截得比两个图块还小（约 256 像素见方）、重度压缩或强降噪。重写后两份水印会同时存在，它能证明“你的在里面”，但不能单独证明谁先写的。</p>
+  </section>
+</main>
+<footer><div class="wrap"><span>隐印 YinYin</span><span>基于 DWT-DCT-SVD 盲水印 · 图片不离开浏览器</span></div></footer>
+<script id="yy-engine">
+/**
+ * Browser port of guofei9987/blind_watermark (DWT-DCT-SVD).
+ * Embed/extract stay consistent with this engine; not bit-identical to NumPy RandomState.
+ */
+const SQRT1_2 = Math.SQRT1_2;
+const BLOCK = 4;
+/** Orthonormal DCT-II matrix for N=4 (matches OpenCV cv2.dct). */
+const DCT4 = (() => {
+    const C = Array.from({ length: 4 }, () => new Float64Array(4));
+    for (let k = 0; k < 4; k++) {
+        const a = k === 0 ? Math.sqrt(1 / 4) : Math.sqrt(2 / 4);
+        for (let n = 0; n < 4; n++) {
+            C[k][n] = a * Math.cos((Math.PI * k * (n + 0.5)) / 4);
+        }
+    }
+    return C;
+})();
+const STRENGTH_PRESETS = {
+    subtle: { d1: 24, d2: 12, label: "轻", hint: "更不易察觉" },
+    standard: { d1: 36, d2: 20, label: "标准", hint: "原库默认" },
+    robust: { d1: 48, d2: 28, label: "强", hint: "抗压缩更好" },
+};
+function mulberry32(seed) {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function textToBits(text) {
+    const bytes = new TextEncoder().encode(text);
+    const bits = new Uint8Array(bytes.length * 8);
+    for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i];
+        for (let k = 0; k < 8; k++)
+            bits[i * 8 + k] = (b >> (7 - k)) & 1;
+    }
+    return bits;
+}
+function bitsToText(bits) {
+    const n = bits.length;
+    const byteLen = Math.floor(n / 8);
+    const bytes = new Uint8Array(byteLen);
+    for (let i = 0; i < byteLen; i++) {
+        let b = 0;
+        for (let k = 0; k < 8; k++) {
+            const v = bits[i * 8 + k];
+            if (v >= 0.5)
+                b |= 1 << (7 - k);
+        }
+        bytes[i] = b;
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/\u0000+$/g, "");
+}
+function shuffleInPlace(arr, seed) {
+    const rng = mulberry32(seed);
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        const tmp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = tmp;
+    }
+    return arr;
+}
+function shuffledBits(bits, passwordWm) {
+    const arr = Array.from(bits);
+    shuffleInPlace(arr, passwordWm);
+    return Uint8Array.from(arr);
+}
+function unshuffleValues(values, passwordWm) {
+    const idx = Array.from({ length: values.length }, (_, i) => i);
+    shuffleInPlace(idx, passwordWm);
+    const out = new Float64Array(values.length);
+    const copy = values.slice();
+    for (let i = 0; i < idx.length; i++)
+        out[idx[i]] = copy[i];
+    return out;
+}
+function blockPermutations(seed, count) {
+    const rng = mulberry32(seed);
+    const out = new Uint8Array(count * 16);
+    const vals = new Float64Array(16);
+    const idx = new Uint8Array(16);
+    for (let b = 0; b < count; b++) {
+        for (let j = 0; j < 16; j++) {
+            vals[j] = rng();
+            idx[j] = j;
+        }
+        idx.sort((p, q) => vals[p] - vals[q] || p - q);
+        out.set(idx, b * 16);
+    }
+    return out;
+}
+function dwt1d(x) {
+    const half = x.length >> 1;
+    const a = new Float64Array(half);
+    const d = new Float64Array(half);
+    for (let i = 0; i < half; i++) {
+        const x0 = x[i * 2];
+        const x1 = x[i * 2 + 1];
+        a[i] = (x0 + x1) * SQRT1_2;
+        d[i] = (x0 - x1) * SQRT1_2;
+    }
+    return { a, d };
+}
+function idwt1d(a, d) {
+    const half = a.length;
+    const x = new Float64Array(half * 2);
+    for (let i = 0; i < half; i++) {
+        const ai = a[i];
+        const di = d[i];
+        x[i * 2] = (ai + di) * SQRT1_2;
+        x[i * 2 + 1] = (ai - di) * SQRT1_2;
+    }
+    return x;
+}
+function dwt2Haar(src, h, w) {
+    const tmp = new Float64Array(h * w);
+    const row = new Float64Array(w);
+    for (let y = 0; y < h; y++) {
+        row.set(src.subarray(y * w, y * w + w));
+        const { a, d } = dwt1d(row);
+        tmp.set(a, y * w);
+        tmp.set(d, y * w + (w >> 1));
+    }
+    const hw = w >> 1;
+    const hh = h >> 1;
+    const ll = new Float64Array(hh * hw);
+    const hl = new Float64Array(hh * hw);
+    const lh = new Float64Array(hh * hw);
+    const hhB = new Float64Array(hh * hw);
+    const col = new Float64Array(h);
+    for (let x = 0; x < w; x++) {
+        for (let y = 0; y < h; y++)
+            col[y] = tmp[y * w + x];
+        const { a, d } = dwt1d(col);
+        if (x < hw) {
+            for (let y = 0; y < hh; y++) {
+                ll[y * hw + x] = a[y];
+                lh[y * hw + x] = d[y];
+            }
+        }
+        else {
+            const xx = x - hw;
+            for (let y = 0; y < hh; y++) {
+                hl[y * hw + xx] = a[y];
+                hhB[y * hw + xx] = d[y];
+            }
+        }
+    }
+    return { ll, hl, lh, hh: hhB, hhH: hh, hhW: hw };
+}
+function idwt2Haar(bands, h, w) {
+    const { ll, hl, lh, hh, hhH, hhW } = bands;
+    const tmp = new Float64Array(h * w);
+    const a = new Float64Array(hhH);
+    const d = new Float64Array(hhH);
+    for (let x = 0; x < w; x++) {
+        if (x < hhW) {
+            for (let y = 0; y < hhH; y++) {
+                a[y] = ll[y * hhW + x];
+                d[y] = lh[y * hhW + x];
+            }
+        }
+        else {
+            const xx = x - hhW;
+            for (let y = 0; y < hhH; y++) {
+                a[y] = hl[y * hhW + xx];
+                d[y] = hh[y * hhW + xx];
+            }
+        }
+        const col = idwt1d(a, d);
+        for (let y = 0; y < h; y++)
+            tmp[y * w + x] = col[y];
+    }
+    const out = new Float64Array(h * w);
+    const low = new Float64Array(w >> 1);
+    const high = new Float64Array(w >> 1);
+    for (let y = 0; y < h; y++) {
+        const off = y * w;
+        low.set(tmp.subarray(off, off + (w >> 1)));
+        high.set(tmp.subarray(off + (w >> 1), off + w));
+        out.set(idwt1d(low, high), off);
+    }
+    return out;
+}
+function dct4(block, out) {
+    const t = new Float64Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let s = 0;
+            for (let n = 0; n < 4; n++)
+                s += DCT4[j][n] * block[i * 4 + n];
+            t[i * 4 + j] = s;
+        }
+    }
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let s = 0;
+            for (let n = 0; n < 4; n++)
+                s += DCT4[i][n] * t[n * 4 + j];
+            out[i * 4 + j] = s;
+        }
+    }
+}
+function idct4(block, out) {
+    const t = new Float64Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let s = 0;
+            for (let n = 0; n < 4; n++)
+                s += DCT4[n][i] * block[n * 4 + j];
+            t[i * 4 + j] = s;
+        }
+    }
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let s = 0;
+            for (let n = 0; n < 4; n++)
+                s += t[i * 4 + n] * DCT4[n][j];
+            out[i * 4 + j] = s;
+        }
+    }
+}
+/** Jacobi SVD for 4×4. Returns U, S, Vh such that A ≈ U * diag(S) * Vh. */
+function svd4(A) {
+    const ata = new Float64Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = i; j < 4; j++) {
+            let sum = 0;
+            for (let k = 0; k < 4; k++)
+                sum += A[k * 4 + i] * A[k * 4 + j];
+            ata[i * 4 + j] = sum;
+            ata[j * 4 + i] = sum;
+        }
+    }
+    const V = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    for (let iter = 0; iter < 48; iter++) {
+        let maxVal = 0;
+        let p = 0;
+        let q = 1;
+        for (let i = 0; i < 4; i++) {
+            for (let j = i + 1; j < 4; j++) {
+                const val = Math.abs(ata[i * 4 + j]);
+                if (val > maxVal) {
+                    maxVal = val;
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        if (maxVal < 1e-15)
+            break;
+        const app = ata[p * 4 + p];
+        const aqq = ata[q * 4 + q];
+        const apq = ata[p * 4 + q];
+        let c;
+        let s;
+        if (Math.abs(apq) < 1e-18) {
+            c = 1;
+            s = 0;
+        }
+        else {
+            const tau = (aqq - app) / (2 * apq);
+            const t = Math.sign(tau) / (Math.abs(tau) + Math.hypot(1, tau));
+            c = 1 / Math.hypot(1, t);
+            s = t * c;
+        }
+        for (let k = 0; k < 4; k++) {
+            const apk = ata[p * 4 + k];
+            const aqk = ata[q * 4 + k];
+            ata[p * 4 + k] = c * apk - s * aqk;
+            ata[q * 4 + k] = s * apk + c * aqk;
+        }
+        for (let k = 0; k < 4; k++) {
+            const akp = ata[k * 4 + p];
+            const akq = ata[k * 4 + q];
+            ata[k * 4 + p] = c * akp - s * akq;
+            ata[k * 4 + q] = s * akp + c * akq;
+        }
+        ata[p * 4 + q] = 0;
+        ata[q * 4 + p] = 0;
+        for (let k = 0; k < 4; k++) {
+            const vkp = V[k * 4 + p];
+            const vkq = V[k * 4 + q];
+            V[k * 4 + p] = c * vkp - s * vkq;
+            V[k * 4 + q] = s * vkp + c * vkq;
+        }
+    }
+    const evals = [ata[0], ata[5], ata[10], ata[15]];
+    const order = [0, 1, 2, 3].sort((i, j) => evals[j] - evals[i]);
+    const s = new Float64Array(4);
+    const Vs = new Float64Array(16);
+    for (let j = 0; j < 4; j++) {
+        const src = order[j];
+        s[j] = Math.sqrt(Math.max(0, evals[src]));
+        for (let i = 0; i < 4; i++)
+            Vs[i * 4 + j] = V[i * 4 + src];
+    }
+    const u = new Float64Array(16);
+    for (let j = 0; j < 4; j++) {
+        const sj = s[j];
+        if (sj < 1e-12) {
+            u[j] = j === 0 ? 1 : 0;
+            u[4 + j] = j === 1 ? 1 : 0;
+            u[8 + j] = j === 2 ? 1 : 0;
+            u[12 + j] = j === 3 ? 1 : 0;
+            continue;
+        }
+        const inv = 1 / sj;
+        for (let i = 0; i < 4; i++) {
+            let sum = 0;
+            for (let k = 0; k < 4; k++)
+                sum += A[i * 4 + k] * Vs[k * 4 + j];
+            u[i * 4 + j] = sum * inv;
+        }
+    }
+    const vh = new Float64Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++)
+            vh[i * 4 + j] = Vs[j * 4 + i];
+    }
+    return { u, s, vh };
+}
+function reconstruct(u, s, vh, out) {
+    const t = new Float64Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++)
+            t[i * 4 + j] = u[i * 4 + j] * s[j];
+    }
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let sum = 0;
+            for (let k = 0; k < 4; k++)
+                sum += t[i * 4 + k] * vh[k * 4 + j];
+            out[i * 4 + j] = sum;
+        }
+    }
+}
+function permute16(src, perm, dest) {
+    for (let i = 0; i < 16; i++)
+        dest[i] = src[perm[i]];
+}
+function inversePermute16(src, perm, dest) {
+    for (let i = 0; i < 16; i++)
+        dest[perm[i]] = src[i];
+}
+function rgbToYuv(r, g, b) {
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const u = -0.168736 * r - 0.331264 * g + 0.5 * b;
+    const v = 0.5 * r - 0.418688 * g - 0.081312 * b;
+    return [y, u, v];
+}
+function yuvToRgb(y, u, v) {
+    const r = y + 1.402 * v;
+    const g = y - 0.344136 * u - 0.714136 * v;
+    const b = y + 1.772 * u;
+    return [r, g, b];
+}
+function imageToChannels(rgba, width, height) {
+    const padH = height % 2;
+    const padW = width % 2;
+    const H = height + padH;
+    const W = width + padW;
+    const yC = new Float64Array(H * W);
+    const uC = new Float64Array(H * W);
+    const vC = new Float64Array(H * W);
+    const alpha = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            const r = rgba[i];
+            const g = rgba[i + 1];
+            const b = rgba[i + 2];
+            alpha[y * width + x] = rgba[i + 3];
+            const [Y, U, V] = rgbToYuv(r, g, b);
+            const o = y * W + x;
+            yC[o] = Y;
+            uC[o] = U;
+            vC[o] = V;
+        }
+    }
+    return { yC, uC, vC, alpha, H, W, width, height };
+}
+function channelsToRgba(yC, uC, vC, alpha, H, W, width, height) {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const o = y * W + x;
+            const [r, g, b] = yuvToRgb(yC[o], uC[o], vC[o]);
+            const i = (y * width + x) * 4;
+            rgba[i] = r;
+            rgba[i + 1] = g;
+            rgba[i + 2] = b;
+            rgba[i + 3] = alpha[y * width + x];
+        }
+    }
+    void H;
+    return rgba;
+}
+function capacityOf(width, height) {
+    const H = height + (height % 2);
+    const W = width + (width % 2);
+    const caH = H >> 1;
+    const caW = W >> 1;
+    const br = Math.floor(caH / BLOCK);
+    const bc = Math.floor(caW / BLOCK);
+    return br * bc;
+}
+function embedInLL(ll, caH, caW, bits, perms, d1, d2, fast) {
+    const br = Math.floor(caH / BLOCK);
+    const bc = Math.floor(caW / BLOCK);
+    const blockNum = br * bc;
+    const wmSize = bits.length;
+    const block = new Float64Array(16);
+    const dctB = new Float64Array(16);
+    const shuffled = new Float64Array(16);
+    const recon = new Float64Array(16);
+    const idctB = new Float64Array(16);
+    const unshuffled = new Float64Array(16);
+    for (let bi = 0; bi < blockNum; bi++) {
+        const by = Math.floor(bi / bc);
+        const bx = bi % bc;
+        for (let i = 0; i < 4; i++) {
+            const row = (by * 4 + i) * caW + bx * 4;
+            for (let j = 0; j < 4; j++)
+                block[i * 4 + j] = ll[row + j];
+        }
+        const wmBit = bits[bi % wmSize];
+        dct4(block, dctB);
+        let u;
+        let s;
+        let vh;
+        if (fast) {
+            ({ u, s, vh } = svd4(dctB));
+            s[0] = (Math.floor(s[0] / d1) + 0.25 + 0.5 * wmBit) * d1;
+            reconstruct(u, s, vh, recon);
+            idct4(recon, idctB);
+        }
+        else {
+            const perm = perms.subarray(bi * 16, bi * 16 + 16);
+            permute16(dctB, perm, shuffled);
+            ({ u, s, vh } = svd4(shuffled));
+            s[0] = (Math.floor(s[0] / d1) + 0.25 + 0.5 * wmBit) * d1;
+            if (d2 > 0)
+                s[1] = (Math.floor(s[1] / d2) + 0.25 + 0.5 * wmBit) * d2;
+            reconstruct(u, s, vh, recon);
+            inversePermute16(recon, perm, unshuffled);
+            idct4(unshuffled, idctB);
+        }
+        for (let i = 0; i < 4; i++) {
+            const row = (by * 4 + i) * caW + bx * 4;
+            for (let j = 0; j < 4; j++)
+                ll[row + j] = idctB[i * 4 + j];
+        }
+    }
+}
+function extractFromLL(ll, caH, caW, perms, d1, d2, fast, out) {
+    const br = Math.floor(caH / BLOCK);
+    const bc = Math.floor(caW / BLOCK);
+    const blockNum = br * bc;
+    const block = new Float64Array(16);
+    const dctB = new Float64Array(16);
+    const shuffled = new Float64Array(16);
+    for (let bi = 0; bi < blockNum; bi++) {
+        const by = Math.floor(bi / bc);
+        const bx = bi % bc;
+        for (let i = 0; i < 4; i++) {
+            const row = (by * 4 + i) * caW + bx * 4;
+            for (let j = 0; j < 4; j++)
+                block[i * 4 + j] = ll[row + j];
+        }
+        dct4(block, dctB);
+        let s;
+        if (fast) {
+            ({ s } = svd4(dctB));
+            out[bi] = s[0] % d1 > d1 / 2 ? 1 : 0;
+        }
+        else {
+            const perm = perms.subarray(bi * 16, bi * 16 + 16);
+            permute16(dctB, perm, shuffled);
+            ({ s } = svd4(shuffled));
+            const wm = s[0] % d1 > d1 / 2 ? 1 : 0;
+            if (d2 > 0) {
+                const tmp = s[1] % d2 > d2 / 2 ? 1 : 0;
+                out[bi] = (wm * 3 + tmp) / 4;
+            }
+            else {
+                out[bi] = wm;
+            }
+        }
+    }
+}
+function oneDimKMeans(inputs) {
+    let center0 = Infinity;
+    let center1 = -Infinity;
+    for (let i = 0; i < inputs.length; i++) {
+        const v = inputs[i];
+        if (v < center0)
+            center0 = v;
+        if (v > center1)
+            center1 = v;
+    }
+    let threshold = 0;
+    const eTol = 1e-6;
+    for (let iter = 0; iter < 300; iter++) {
+        threshold = (center0 + center1) / 2;
+        let sum0 = 0;
+        let n0 = 0;
+        let sum1 = 0;
+        let n1 = 0;
+        for (let i = 0; i < inputs.length; i++) {
+            const v = inputs[i];
+            if (v > threshold) {
+                sum1 += v;
+                n1++;
+            }
+            else {
+                sum0 += v;
+                n0++;
+            }
+        }
+        const new0 = n0 ? sum0 / n0 : center0;
+        const new1 = n1 ? sum1 / n1 : center1;
+        if (Math.abs((new0 + new1) / 2 - threshold) < eTol) {
+            threshold = (new0 + new1) / 2;
+            break;
+        }
+        center0 = new0;
+        center1 = new1;
+    }
+    const out = new Uint8Array(inputs.length);
+    for (let i = 0; i < inputs.length; i++)
+        out[i] = inputs[i] > threshold ? 1 : 0;
+    return out;
+}
+function embedWatermark(input) {
+    const { rgba, width, height, passwordImg, passwordWm, d1, d2, fast = false } = input;
+    const bits = shuffledBits(input.bits, passwordWm);
+    const wmSize = bits.length;
+    const cap = capacityOf(width, height);
+    if (wmSize >= cap) {
+        throw new Error(`水印过长：当前图片最多可嵌入 ${cap - 1} bit，实际 ${wmSize} bit。请缩短文本或换更大的图。`);
+    }
+    const { yC, uC, vC, alpha, H, W } = imageToChannels(rgba, width, height);
+    const channels = [yC, uC, vC];
+    const perms = fast ? new Uint8Array(0) : blockPermutations(passwordImg, cap);
+    for (const ch of channels) {
+        const bands = dwt2Haar(ch, H, W);
+        embedInLL(bands.ll, bands.hhH, bands.hhW, bits, perms, d1, d2, fast);
+        ch.set(idwt2Haar(bands, H, W));
+    }
+    return {
+        rgba: channelsToRgba(yC, uC, vC, alpha, H, W, width, height),
+        wmSize,
+        capacity: cap,
+    };
+}
+function extractWatermark(input) {
+    const { rgba, width, height, wmSize, passwordImg, passwordWm, d1, d2, fast = false } = input;
+    const cap = capacityOf(width, height);
+    if (wmSize >= cap || wmSize <= 0) {
+        throw new Error(`水印长度无效（1–${cap - 1}），当前为 ${wmSize}。`);
+    }
+    const { yC, uC, vC, H, W } = imageToChannels(rgba, width, height);
+    const perms = fast ? new Uint8Array(0) : blockPermutations(passwordImg, cap);
+    const raw = [new Float64Array(cap), new Float64Array(cap), new Float64Array(cap)];
+    const channels = [yC, uC, vC];
+    for (let c = 0; c < 3; c++) {
+        const bands = dwt2Haar(channels[c], H, W);
+        extractFromLL(bands.ll, bands.hhH, bands.hhW, perms, d1, d2, fast, raw[c]);
+    }
+    const avg = new Float64Array(wmSize);
+    const counts = new Int32Array(wmSize);
+    for (let c = 0; c < 3; c++) {
+        const arr = raw[c];
+        for (let i = 0; i < cap; i++) {
+            const k = i % wmSize;
+            avg[k] += arr[i];
+            counts[k]++;
+        }
+    }
+    for (let i = 0; i < wmSize; i++)
+        avg[i] = avg[i] / counts[i];
+    const clustered = oneDimKMeans(avg);
+    const scores = unshuffleValues(avg, passwordWm);
+    const bits = new Uint8Array(wmSize);
+    const shuffledBitsArr = Array.from(clustered);
+    const idx = Array.from({ length: wmSize }, (_, i) => i);
+    shuffleInPlace(idx, passwordWm);
+    for (let i = 0; i < wmSize; i++)
+        bits[idx[i]] = shuffledBitsArr[i];
+    return { bits, scores, text: bitsToText(bits) };
+}
+function makeSampleRgba(width = 640, height = 480) {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const nx = x / width;
+            const ny = y / height;
+            const grain = ((x * 73 + y * 149) % 17) - 8;
+            const paper = 232 + grain;
+            const vignette = 1 - Math.hypot(nx - 0.5, ny - 0.55) * 0.35;
+            const hill = Math.sin(nx * 6.2) * 18 + ny * 40;
+            const ink = Math.max(0, 1 - Math.abs(ny * height - (height * 0.62 + hill)) / 14);
+            const disk = Math.hypot(x - width * 0.72, y - height * 0.28) < 36 ? 1 : 0;
+            const bar = x > width * 0.18 && x < width * 0.82 && y > height * 0.22 && y < height * 0.24 ? 1 : 0;
+            let r = (paper - 8) * vignette;
+            let g = (paper - 14) * vignette;
+            let b = (paper - 22) * vignette;
+            r -= ink * 90;
+            g -= ink * 70;
+            b -= ink * 50;
+            if (disk) {
+                r = 180;
+                g = 58;
+                b = 50;
+            }
+            if (bar) {
+                r = 40;
+                g = 34;
+                b = 28;
+            }
+            const i = (y * width + x) * 4;
+            rgba[i] = r;
+            rgba[i + 1] = g;
+            rgba[i + 2] = b;
+            rgba[i + 3] = 255;
+        }
+    }
+    return { rgba, width, height };
+}
+function estimateMaxChars(width, height) {
+    const cap = Math.max(0, capacityOf(width, height) - 1);
+    return Math.floor(cap / 8);
+}
+function crc32(data) {
+    let c = ~0;
+    for (let i = 0; i < data.length; i++) {
+        c ^= data[i];
+        for (let k = 0; k < 8; k++)
+            c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    return ~c >>> 0;
+}
+const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+function injectPngMeta(png, meta) {
+    const src = new Uint8Array(png);
+    for (let i = 0; i < 8; i++) {
+        if (src[i] !== PNG_SIG[i])
+            return new Blob([png], { type: "image/png" });
+    }
+    const payload = `YinYin\0${JSON.stringify(meta)}`;
+    const textBytes = new TextEncoder().encode(payload);
+    const chunkBody = new Uint8Array(4 + textBytes.length);
+    const view = new DataView(chunkBody.buffer);
+    view.setUint32(0, 0x74455874); // tEXt
+    chunkBody.set(textBytes, 4);
+    const crc = crc32(chunkBody);
+    const chunk = new Uint8Array(12 + textBytes.length);
+    const cv = new DataView(chunk.buffer);
+    cv.setUint32(0, textBytes.length);
+    chunk.set(chunkBody, 4);
+    cv.setUint32(8 + textBytes.length, crc);
+    let iend = src.length - 12;
+    for (let i = 8; i < src.length - 8;) {
+        const len = (src[i] << 24) | (src[i + 1] << 16) | (src[i + 2] << 8) | src[i + 3];
+        const type = String.fromCharCode(src[i + 4], src[i + 5], src[i + 6], src[i + 7]);
+        if (type === "IEND") {
+            iend = i;
+            break;
+        }
+        i += 12 + len;
+    }
+    const out = new Uint8Array(iend + chunk.length + (src.length - iend));
+    out.set(src.subarray(0, iend), 0);
+    out.set(chunk, iend);
+    out.set(src.subarray(iend), iend + chunk.length);
+    return new Blob([out], { type: "image/png" });
+}
+function readPngMeta(png) {
+    const src = new Uint8Array(png);
+    if (src.length < 8)
+        return null;
+    for (let i = 0; i < 8; i++)
+        if (src[i] !== PNG_SIG[i])
+            return null;
+    for (let i = 8; i < src.length - 8;) {
+        const len = (src[i] << 24) | (src[i + 1] << 16) | (src[i + 2] << 8) | src[i + 3];
+        if (len < 0 || i + 12 + len > src.length)
+            break;
+        const type = String.fromCharCode(src[i + 4], src[i + 5], src[i + 6], src[i + 7]);
+        if (type === "tEXt") {
+            const body = src.subarray(i + 8, i + 8 + len);
+            const text = new TextDecoder().decode(body);
+            const z = text.indexOf("\0");
+            const key = z >= 0 ? text.slice(0, z) : text;
+            const val = z >= 0 ? text.slice(z + 1) : "";
+            if (key === "YinYin") {
+                try {
+                    const parsed = JSON.parse(val);
+                    if (parsed && (parsed.v === 1 || parsed.v === 2) && typeof parsed.len === "number")
+                        return parsed;
+                }
+                catch {
+                    /* ignore */
+                }
+            }
+        }
+        if (type === "IEND")
+            break;
+        i += 12 + len;
+    }
+    return null;
+}
+
+/* ===== v2：自校验帧 + 自动找回尺寸/方向 ===== */
+const FRAME_SIZES = [16, 48, 120];
+const FRAME_MAGIC = 0x59;
+function bytesToBits(bytes) {
+    const bits = new Uint8Array(bytes.length * 8);
+    for (let i = 0; i < bytes.length; i++)
+        for (let k = 0; k < 8; k++)
+            bits[i * 8 + k] = (bytes[i] >> (7 - k)) & 1;
+    return bits;
+}
+function bitsToBytes(bits) {
+    const out = new Uint8Array(bits.length >> 3);
+    for (let i = 0; i < out.length; i++) {
+        let b = 0;
+        for (let k = 0; k < 8; k++) if (bits[i * 8 + k] >= 0.5) b |= 1 << (7 - k);
+        out[i] = b;
+    }
+    return out;
+}
+/** 文本 → [魔数][长度][文本补零到 N][CRC32]，帧长只有三档，提取时不用再填比特长度 */
+function frameBitsFor(text) {
+    const b = new TextEncoder().encode(text);
+    const N = FRAME_SIZES.find((n) => n >= b.length);
+    if (N === undefined) throw new Error("水印文本过长：最多 120 字节（约 40 个汉字）。");
+    const f = new Uint8Array(N + 6);
+    f[0] = FRAME_MAGIC;
+    f[1] = b.length;
+    f.set(b, 2);
+    new DataView(f.buffer).setUint32(N + 2, crc32(f.subarray(0, N + 2)));
+    return bytesToBits(f);
+}
+function parseFrame(bits) {
+    const f = bitsToBytes(bits);
+    const N = f.length - 6;
+    if (f[0] !== FRAME_MAGIC || f[1] > N) return null;
+    if (new DataView(f.buffer).getUint32(N + 2) !== crc32(f.subarray(0, N + 2))) return null;
+    return new TextDecoder("utf-8", { fatal: false }).decode(f.subarray(2, 2 + f[1]));
+}
+/** 只做一次 DWT/DCT/SVD，得到每个块的原始判决值 */
+function extractRaw({ rgba, width, height, passwordImg, d1, d2, fast = false }, nch = 3) {
+    const cap = capacityOf(width, height);
+    const { yC, uC, vC, H, W } = imageToChannels(rgba, width, height);
+    const perms = fast ? new Uint8Array(0) : blockPermutations(passwordImg, cap);
+    const raw = [];
+    const chs = [yC, uC, vC];
+    for (let c = 0; c < nch; c++) {
+        raw.push(new Float64Array(cap));
+        const bands = dwt2Haar(chs[c], H, W);
+        extractFromLL(bands.ll, bands.hhH, bands.hhW, perms, d1, d2, fast, raw[c]);
+    }
+    return { raw, cap };
+}
+function decodeRaw(raw, cap, wmSize, passwordWm) {
+    const avg = new Float64Array(wmSize);
+    const counts = new Int32Array(wmSize);
+    for (let c = 0; c < raw.length; c++)
+        for (let i = 0; i < cap; i++) { avg[i % wmSize] += raw[c][i]; counts[i % wmSize]++; }
+    for (let i = 0; i < wmSize; i++) avg[i] /= counts[i];
+    const clustered = Array.from(oneDimKMeans(avg));
+    const idx = Array.from({ length: wmSize }, (_, i) => i);
+    shuffleInPlace(idx, passwordWm);
+    const bits = new Uint8Array(wmSize);
+    for (let i = 0; i < wmSize; i++) bits[idx[i]] = clustered[i];
+    return bits;
+}
+/** 依次试三档帧长，CRC 对上才算成功；legacyLen 为旧版图片的比特长度 */
+function extractFrame(input, legacyLen, nch = 3) {
+    const { raw, cap } = extractRaw(input, nch);
+    for (const N of FRAME_SIZES) {
+        const ws = (N + 6) * 8;
+        if (ws >= cap) continue;
+        const t = parseFrame(decodeRaw(raw, cap, ws, input.passwordWm));
+        if (t !== null) return { text: t, legacy: false };
+    }
+    if (legacyLen > 0 && legacyLen < cap)
+        return { text: bitsToText(decodeRaw(raw, cap, legacyLen, input.passwordWm)), legacy: true };
+    return null;
+}
+/** 方向变换（纯数组，不依赖 canvas） */
+function orientRgba(rgba, w, h, o) {
+    if (o === 0) return { rgba, w, h };
+    const sw = o >= 4;
+    const W2 = sw ? h : w, H2 = sw ? w : h;
+    const out = new Uint8ClampedArray(W2 * H2 * 4);
+    for (let y = 0; y < H2; y++)
+        for (let x = 0; x < W2; x++) {
+            let sx, sy;
+            if (o === 1) { sx = w - 1 - x; sy = y; }
+            else if (o === 2) { sx = x; sy = h - 1 - y; }
+            else if (o === 3) { sx = w - 1 - x; sy = h - 1 - y; }
+            else if (o === 4) { sx = y; sy = h - 1 - x; }   // 把顺时针转过 90° 的图转回来
+            else { sx = w - 1 - y; sy = x; }                 // 把逆时针转过 90° 的图转回来
+            const si = (sy * w + sx) * 4, di = (y * W2 + x) * 4;
+            out[di] = rgba[si]; out[di + 1] = rgba[si + 1]; out[di + 2] = rgba[si + 2]; out[di + 3] = rgba[si + 3];
+        }
+    return { rgba: out, w: W2, h: H2 };
+}
+const ORIENT_NAMES = ["", "水平翻转", "垂直翻转", "旋转 180°", "旋转 90°", "旋转 270°"];
+const COMMON_LONG_EDGES = [1600, 1440, 1280, 1200, 1080, 1024, 960, 900, 800, 768, 720, 640, 600, 512, 480, 400];
+const COMMON_RATIOS = [0.5, 2 / 3, 0.75, 0.8, 0.9, 1.1, 1.25, 4 / 3, 1.5, 2];
+/** 生成要尝试的“还原尺寸”，known 为已知原始尺寸 */
+function sizeCandidates(w, h, known) {
+    const out = [], seen = new Set();
+    const add = (W, H) => {
+        W = Math.round(W); H = Math.round(H);
+        W -= W % 2; H -= H % 2;
+        if (W < 64 || H < 64 || W > 1600 || H > 1600) return;
+        const k = W + "x" + H;
+        if (!seen.has(k)) { seen.add(k); out.push([W, H]); }
+    };
+    if (known) add(known[0], known[1]);
+    add(w, h);
+    if (known) return out;
+    const longIsW = w >= h, L = Math.max(w, h), S = Math.min(w, h);
+    const fromLong = (Lt) => {
+        const St = (S * Lt) / L;
+        for (const v of [Math.floor(St / 2) * 2, Math.ceil(St / 2) * 2]) longIsW ? add(Lt, v) : add(v, Lt);
+    };
+    for (const r of COMMON_RATIOS) fromLong(L / r);
+    for (const Lt of COMMON_LONG_EDGES) fromLong(Lt);
+    return out;
+}
+
+/** 缩放：缩小时先做盒式平均，再双线性 */
+function resizeRgba(src, w, h, W, H) {
+    const out = new Uint8ClampedArray(W * H * 4);
+    const sx = w / W, sy = h / H;
+    const rx = Math.max(1, Math.round(sx)), ry = Math.max(1, Math.round(sy));
+    for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4;
+            if (rx > 1 || ry > 1) {
+                const x0 = Math.floor(x * sx), y0 = Math.floor(y * sy);
+                const x1 = Math.min(w, Math.max(x0 + 1, Math.floor((x + 1) * sx))), y1 = Math.min(h, Math.max(y0 + 1, Math.floor((y + 1) * sy)));
+                let r = 0, g = 0, b = 0, a = 0, n = 0;
+                for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { const i = (yy * w + xx) * 4; r += src[i]; g += src[i + 1]; b += src[i + 2]; a += src[i + 3]; n++; }
+                out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = a / n;
+            } else {
+                const fx = Math.min(w - 1, Math.max(0, (x + 0.5) * sx - 0.5)), fy = Math.min(h - 1, Math.max(0, (y + 0.5) * sy - 0.5));
+                const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1);
+                const ax = fx - x0, ay = fy - y0;
+                for (let c = 0; c < 4; c++)
+                    out[o + c] = (src[(y0 * w + x0) * 4 + c] * (1 - ax) + src[(y0 * w + x1) * 4 + c] * ax) * (1 - ay)
+                        + (src[(y1 * w + x0) * 4 + c] * (1 - ax) + src[(y1 * w + x1) * 4 + c] * ax) * ay;
+            }
+        }
+    return out;
+}
+/** 自动找回：先原样与已知尺寸（三通道），再按常见缩放/方向搜索（亮度通道快筛） */
+function searchWatermark(img, opt, onProgress) {
+    const { pwd, d1, d2, fast, known, legacyLen, deep } = opt;
+    const base = { passwordImg: pwd, passwordWm: pwd, d1, d2, fast };
+    const plan = [];
+    for (const s of sizeCandidates(img.w, img.h, known)) plan.push([0, s, 3]);
+    plan.push([0, [img.w - (img.w % 2), img.h - (img.h % 2)], 1]); // 重度压缩时色度被毁，只用亮度反而更稳
+    if (deep) {
+        for (let o = 1; o < 6; o++) {
+            const or = o >= 4 ? [img.h, img.w] : [img.w, img.h];
+            for (const s of sizeCandidates(or[0], or[1], known).slice(0, known ? 2 : 1)) plan.push([o, s, 1]);
+        }
+        if (!known) {
+            for (const s of sizeCandidates(img.w, img.h, null)) plan.push([0, s, 1]);
+            for (const o of [1, 4, 5]) {
+                const or = o >= 4 ? [img.h, img.w] : [img.w, img.h];
+                for (const s of sizeCandidates(or[0], or[1], null)) plan.push([o, s, 1]);
+            }
+        }
+    }
+    const cache = {};
+    for (let i = 0; i < plan.length; i++) {
+        const [o, [W, H], nch] = plan[i];
+        if (onProgress) onProgress(i + 1, plan.length);
+        const or = cache[o] || (cache[o] = orientRgba(img.rgba, img.w, img.h, o));
+        const rgba = W === or.w && H === or.h ? or.rgba : resizeRgba(or.rgba, or.w, or.h, W, H);
+        const res = extractFrame({ ...base, rgba, width: W, height: H }, i === 0 ? legacyLen : 0, nch);
+        if (res) return { ...res, orient: ORIENT_NAMES[o], W, H, resized: W !== or.w || H !== or.h, tries: i + 1 };
+    }
+    return null;
+}
+
+/* ===== 抗截图层：密钥生成的平铺扩频图样 =====
+ * 128×128 的图块（2×2 像素为一格）平铺满全图，叠加在亮度上。
+ * 截图后：自相关求周期（=缩放），按周期折叠成一个图块，FFT 找裁切偏移，再逐比特相关解码。
+ * 载荷 16 字节 + CRC16；不同密钥的图样彼此近似正交，所以别人用别的密钥重写盖不掉。 */
+const L2_T = 128, L2_C = 64, L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2;
+function crc16(bytes) {
+    let c = 0xffff;
+    for (const b of bytes) { c ^= b << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
+    return c;
+}
+const _l2cache = new Map();
+/** 返回 [同步图样, 数据图样...]，每个 64×64 的 ±1 */
+function l2Patterns(seed) {
+    if (_l2cache.has(seed)) return _l2cache.get(seed);
+    const rng = mulberry32((seed ^ 0x5eed1234) >>> 0);
+    const pats = [];
+    for (let p = 0; p <= L2_BITS; p++) {
+        const a = new Int8Array(L2_C * L2_C);
+        for (let i = 0; i < a.length; i++) a[i] = rng() < 0.5 ? -1 : 1;
+        pats.push(a);
+    }
+    _l2cache.set(seed, pats);
+    return pats;
+}
+function l2PayloadBits(text) {
+    const enc = new TextEncoder();
+    let s = "";
+    for (const ch of text) { if (enc.encode(s + ch).length > L2_BYTES) break; s += ch; }
+    const b = new Uint8Array(L2_BYTES + 2);
+    b.set(enc.encode(s));
+    const c = crc16(b.subarray(0, L2_BYTES));
+    b[L2_BYTES] = c >> 8; b[L2_BYTES + 1] = c & 255;
+    return { bits: bytesToBits(b), kept: s };
+}
+function l2Tile(seed, bits) {
+    const P = l2Patterns(seed);
+    const a0 = Math.sqrt(0.3), a1 = Math.sqrt(0.7 / L2_BITS);
+    const tile = new Float32Array(L2_C * L2_C);
+    for (let i = 0; i < tile.length; i++) {
+        let v = a0 * P[0][i];
+        for (let k = 0; k < L2_BITS; k++) v += (bits[k] ? a1 : -a1) * P[k + 1][i];
+        tile[i] = v;
+    }
+    let m = 0, q = 0;
+    for (const v of tile) { m += v; q += v * v; }
+    m /= tile.length; const sd = Math.sqrt(q / tile.length - m * m) || 1;
+    for (let i = 0; i < tile.length; i++) tile[i] = (tile[i] - m) / sd;
+    return tile;
+}
+/** 在 RGBA 上叠加（就地修改），纹理越多的地方叠得越重一点 */
+function l2Embed(rgba, w, h, seed, text) {
+    const { bits, kept } = l2PayloadBits(text);
+    const tile = l2Tile(seed, bits);
+    const Y = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) Y[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
+    for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+            let act = 0;
+            if (x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+                const c = Y[y * w + x];
+                act = Math.abs(c - Y[y * w + x - 1]) + Math.abs(c - Y[y * w + x + 1]) + Math.abs(c - Y[(y - 1) * w + x]) + Math.abs(c - Y[(y + 1) * w + x]);
+            }
+            const mask = Math.min(1.6, 0.65 + act / 40);
+            const v = L2_ALPHA * mask * tile[(((y % L2_T) >> 1) * L2_C) + ((x % L2_T) >> 1)];
+            const i = (y * w + x) * 4;
+            rgba[i] = rgba[i] + v; rgba[i + 1] = rgba[i + 1] + v; rgba[i + 2] = rgba[i + 2] + v;
+        }
+    return kept;
+}
+/** 亮度减去 5×5 均值，只留下细节和图样 */
+function l2Residual(rgba, w, h) {
+    const Y = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) Y[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
+    const I = new Float64Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = 0; x < w; x++) { s += Y[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + s; } }
+    const R = new Float32Array(w * h);
+    for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+            const x0 = Math.max(0, x - 2), x1 = Math.min(w, x + 3), y0 = Math.max(0, y - 2), y1 = Math.min(h, y + 3);
+            const s = I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0];
+            let r = Y[y * w + x] - s / ((x1 - x0) * (y1 - y0));
+            R[y * w + x] = Math.max(-12, Math.min(12, r)); // 削掉强边缘，免得淹没图样
+        }
+    return R;
+}
+function l2AutoAt(R, w, h, L, axis) {
+    let s = 0, n = 0;
+    if (axis === 0) { for (let y = 0; y < h; y += 2) { const o = y * w; for (let x = 0; x + L < w; x++) s += R[o + x] * R[o + x + L]; n += w - L; } }
+    else { for (let y = 0; y + L < h; y += 2) { const o = y * w, o2 = (y + L) * w; for (let x = 0; x < w; x++) s += R[o + x] * R[o2 + x]; n += w; } }
+    return n ? s / n : 0;
+}
+/** 估计某一方向上的平铺周期（像素，带小数） */
+function l2Period(R, w, h, axis) {
+    const dim = axis === 0 ? w : h;
+    const maxL = Math.min(420, Math.floor(dim * 0.55));
+    if (maxL < 50) return [];
+    const A = new Float64Array(maxL + 2);
+    for (let L = 40; L <= maxL + 1; L++) A[L] = l2AutoAt(R, w, h, L, axis);
+    let mean = 0, cnt = 0;
+    for (let L = 40; L <= maxL; L++) { mean += A[L]; cnt++; }
+    mean /= cnt;
+    let sd = 0; for (let L = 40; L <= maxL; L++) sd += (A[L] - mean) ** 2; sd = Math.sqrt(sd / cnt) || 1;
+    const peaks = [];
+    for (let L = 41; L <= maxL; L++) if (A[L] > A[L - 1] && A[L] >= A[L + 1] && (A[L] - mean) / sd > 1.5) peaks.push([L, (A[L] - mean) / sd]);
+    peaks.sort((a, b) => b[1] - a[1]);
+    const cands = [];
+    for (const [L0] of peaks.slice(0, 5)) {
+        // 若 L0/2、L0/3 处也有峰，取最小的基本周期
+        let p = L0;
+        for (const d of [3, 2]) { const q = Math.round(L0 / d); if (q >= 40 && peaks.some(([L, z]) => Math.abs(L - q) <= 1 && z > 1.5)) { p = L0 / d; break; } }
+        // 用最高次谐波精修
+        const m = Math.max(1, Math.floor((dim * 0.7) / p));
+        let best = -Infinity, bl = Math.round(m * p);
+        for (let L = Math.round(m * p) - 3; L <= Math.round(m * p) + 3; L++) { if (L < 1 || L >= dim - 8) continue; const v = l2AutoAt(R, w, h, L, axis); if (v > best) { best = v; bl = L; } }
+        const a = l2AutoAt(R, w, h, bl - 1, axis), c = l2AutoAt(R, w, h, bl + 1, axis);
+        const den = a - 2 * best + c;
+        const off = den < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / den)) : 0;
+        const per = (bl + off) / m;
+        if (!cands.some((x) => Math.abs(x - per) < 0.5)) cands.push(per);
+    }
+    return cands;
+}
+function fft1(re, im, inv) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+    for (let len = 2; len <= n; len <<= 1) {
+        const ang = ((inv ? 2 : -2) * Math.PI) / len, wr = Math.cos(ang), wi = Math.sin(ang);
+        for (let i = 0; i < n; i += len) { let cr = 1, ci = 0; for (let k = 0; k < len / 2; k++) { const a = i + k, b = a + len / 2; const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr; re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } }
+    }
+}
+function fft2(re, im, n, inv) {
+    const r = new Float64Array(n), i2 = new Float64Array(n);
+    for (let y = 0; y < n; y++) { for (let x = 0; x < n; x++) { r[x] = re[y * n + x]; i2[x] = im[y * n + x]; } fft1(r, i2, inv); for (let x = 0; x < n; x++) { re[y * n + x] = r[x]; im[y * n + x] = i2[x]; } }
+    for (let x = 0; x < n; x++) { for (let y = 0; y < n; y++) { r[y] = re[y * n + x]; i2[y] = im[y * n + x]; } fft1(r, i2, inv); for (let y = 0; y < n; y++) { re[y * n + x] = r[y]; im[y * n + x] = i2[y]; } }
+}
+/** 按周期 (px, py) 把残差折叠成 128×128 */
+function l2Fold(R, w, h, px, py) {
+    const T = new Float64Array(L2_T * L2_T);
+    const sx = L2_T / px, sy = L2_T / py;
+    for (let y = 0; y < h; y++) {
+        const v = Math.floor(y * sy) & (L2_T - 1), o = y * w;
+        for (let x = 0; x < w; x++) T[v * L2_T + (Math.floor(x * sx) & (L2_T - 1))] += R[o + x];
+    }
+    return T;
+}
+/** 二面体变换（翻转/转 90°）作用在折叠后的图块上 */
+function l2Dihedral(T, k) {
+    if (k === 0) return T;
+    const n = L2_T, out = new Float64Array(n * n);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+        let sx = x, sy = y;
+        if (k & 4) { const t = sx; sx = sy; sy = t; }
+        if (k & 1) sx = n - 1 - sx;
+        if (k & 2) sy = n - 1 - sy;
+        out[y * n + x] = T[sy * n + sx];
+    }
+    return out;
+}
+const _l2sync = new Map();
+function l2SyncSpec(seed) {
+    if (_l2sync.has(seed)) return _l2sync.get(seed);
+    const P = l2Patterns(seed), n = L2_T;
+    const re = new Float64Array(n * n), im = new Float64Array(n * n);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) re[y * n + x] = P[0][(y >> 1) * L2_C + (x >> 1)];
+    fft2(re, im, n, false);
+    const r = { re, im }; _l2sync.set(seed, r); return r;
+}
+/** 同步：返回相关峰（按强度排序的前 3 个） */
+function l2Sync(T, seed) {
+    const n = L2_T, S = l2SyncSpec(seed);
+    const tre = Float64Array.from(T), tim = new Float64Array(n * n);
+    fft2(tre, tim, n, false);
+    for (let i = 0; i < n * n; i++) { const a = tre[i] * S.re[i] + tim[i] * S.im[i], b = tim[i] * S.re[i] - tre[i] * S.im[i]; tre[i] = a; tim[i] = b; }
+    fft2(tre, tim, n, true);
+    let m = 0, q = 0; for (const v of tre) { m += v; q += v * v; } m /= n * n; const sd = Math.sqrt(q / (n * n) - m * m) || 1;
+    const top = [];
+    for (let i = 0; i < n * n; i++) {
+        const z = (tre[i] - m) / sd;
+        if (top.length < 3 || z > top[top.length - 1].z) { top.push({ z, dx: i % n, dy: Math.floor(i / n) }); top.sort((a, b) => b.z - a.z); if (top.length > 3) top.pop(); }
+    }
+    return top;
+}
+function l2DecodeAt(T, seed, dx, dy) {
+    const P = l2Patterns(seed), n = L2_T;
+    const bits = new Uint8Array(L2_BITS);
+    for (let k = 0; k < L2_BITS; k++) {
+        const pk = P[k + 1]; let s = 0;
+        for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> 1) * L2_C; const o = v * n; for (let u = 0; u < n; u++) s += T[o + u] * pk[pv + (((u - dx) & (n - 1)) >> 1)]; }
+        bits[k] = s > 0 ? 1 : 0;
+    }
+    const by = bitsToBytes(bits);
+    if (((by[L2_BYTES] << 8) | by[L2_BYTES + 1]) !== crc16(by.subarray(0, L2_BYTES))) return null;
+    let end = L2_BYTES; while (end > 0 && by[end - 1] === 0) end--;
+    return new TextDecoder("utf-8", { fatal: false }).decode(by.subarray(0, end));
+}
+/** 在一组周期上试：同步峰够强才解码；ks 为要试的翻转/旋转 */
+function l2TryAt(R, w, h, px, py, seed, ks, minZ) {
+    const T0 = l2Fold(R, w, h, px, py);
+    let best = { z: 0 };
+    for (const k of ks) {
+        const T = l2Dihedral(T0, k);
+        const top = l2Sync(T, seed);
+        if (top[0].z > best.z) best = { z: top[0].z, k };
+        for (const pk of top) {
+            if (pk.z < minZ) break;
+            const text = l2DecodeAt(T, seed, pk.dx, pk.dy);
+            if (text !== null) return { hit: { text, z: pk.z, px, py, k } };
+        }
+    }
+    return { best };
+}
+/** 抗截图层提取：不依赖原尺寸、不依赖裁切位置 */
+function l2Extract(rgba, w, h, seed, onProgress) {
+    const R = l2Residual(rgba, w, h);
+    const tries = [];
+    const add = (a, b) => { if (!tries.some(([x, y]) => Math.abs(x - a) < 0.3 && Math.abs(y - b) < 0.3)) tries.push([a, b]); };
+    add(L2_T, L2_T);
+    const pxs = l2Period(R, w, h, 0), pys = l2Period(R, w, h, 1);
+    for (const a of pxs) for (const b of pys) if (Math.abs(a / b - 1) < 0.08) add(a, b);
+    for (const a of pxs) add(a, a);
+    for (const b of pys) add(b, b);
+    const all = [0, 1, 2, 3, 4, 5, 6, 7];
+    let t = 0;
+    for (const [px, py] of tries) {
+        if (onProgress) onProgress(++t);
+        const r = l2TryAt(R, w, h, px, py, seed, all, 5);
+        if (r.hit) return r.hit;
+        if (r.best.z >= 4) {
+            for (const ex of [-0.0015, -0.0008, 0, 0.0008, 0.0015]) for (const ey of [-0.0015, -0.0008, 0, 0.0008, 0.0015]) {
+                if (!ex && !ey) continue;
+                const q = l2TryAt(R, w, h, px * (1 + ex), py * (1 + ey), seed, [r.best.k], 4.5);
+                if (q.hit) return q.hit;
+            }
+        }
+    }
+    // 兜底：周期被图片自身纹理盖住时，按等比缩放逐档扫描（只试原向与水平翻转）
+    for (let p = 0.42 * L2_T; p <= 2.6 * L2_T; p *= 1.003) {
+        if (p * 2 > Math.max(w, h)) break;
+        if (onProgress && (++t % 20 === 0)) onProgress(t);
+        const r = l2TryAt(R, w, h, p, p, seed, [0, 1], 6);
+        if (r.hit) return r.hit;
+        if (r.best.z >= 5) {
+            for (const e of [-0.0012, -0.0006, 0.0006, 0.0012]) {
+                const q = l2TryAt(R, w, h, p * (1 + e), p * (1 + e), seed, [r.best.k], 4.5);
+                if (q.hit) return q.hit;
+            }
+        }
+    }
+    return null;
+}
+
+</script>
+<script>
+const PRESETS = { subtle:{d1:24,d2:12,hint:"更不易察觉"}, standard:{d1:36,d2:20,hint:"原库默认"}, robust:{d1:48,d2:28,hint:"抗压缩更好"} };
+let strength = "standard";
+document.getElementById("password").value=String(100000+Math.floor(Math.random()*900000))+String(Math.floor(Math.random()*1000)).padStart(3,"0");
+let source = null, probe = null, embedBlob = null, embedUrl = null, sourceUrl = null;
+document.addEventListener("submit", (e) => { e.preventDefault(); }, true);
+
+function toast(msg){ const el=document.getElementById("toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),1800); }
+function parsePassword(raw){
+  const t=raw.trim(); if(!t) return 1;
+  if(/^\d+$/.test(t)){ const n=Number.parseInt(t,10); if(n>=0 && n<=0xffffffff) return n>>>0; }
+  let h=2166136261; for(let i=0;i<t.length;i++){ h^=t.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0;
+}
+function fileToImage(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const buf=reader.result;
+      const blob=new Blob([buf],{type:file.type||"image/png"});
+      const img=new Image();
+      img.onload=()=>{
+        const maxEdge=1600;
+        const longest=Math.max(img.width,img.height);
+        const scale=longest>maxEdge?maxEdge/longest:1;
+        let w=Math.max(2, Math.round(img.width*scale));
+        let h=Math.max(2, Math.round(img.height*scale));
+        w-=w%2; h-=h%2;
+        const c=document.createElement("canvas"); c.width=w; c.height=h;
+        const ctx=c.getContext("2d"); ctx.drawImage(img,0,0,w,h);
+        const data=ctx.getImageData(0,0,w,h);
+        if(scale<1) toast("已缩小图片，以免手机浏览器内存不足");
+        resolve({rgba:data.data,width:w,height:h,buffer:buf,url:c.toDataURL("image/png"),name:file.name});
+      };
+      img.onerror=()=>reject(new Error("无法读取图片"));
+      img.src=URL.createObjectURL(blob);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+function rgbaToCanvas(rgba,w,h){
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba),w,h),0,0);
+  return c;
+}
+function showDrop(el, url){
+  let img=el.querySelector("img");
+  if(!img){ img=document.createElement("img"); el.appendChild(img); }
+  img.src=url;
+}
+function bindDrop(drop, input, handler){
+  drop.addEventListener("dragover",e=>{e.preventDefault();});
+  drop.addEventListener("drop",e=>{e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) handler(f);});
+  input.addEventListener("change",e=>{ const f=e.target.files[0]; if(f) handler(f); e.target.value=""; });
+}
+function setStrength(k, group){
+  strength=k;
+  group.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b.dataset.k===k));
+  const p=PRESETS[k];
+  const hint=document.getElementById("str-hint");
+  if(hint) hint.textContent=p.hint+" · d1="+p.d1+" d2="+p.d2;
+}
+
+document.querySelectorAll(".tabs button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    ["embed","extract","about"].forEach(id=>{
+      document.getElementById("tab-"+id).classList.toggle("hidden", btn.dataset.tab!==id);
+    });
+  });
+});
+document.querySelectorAll("#strength button").forEach(b=>b.addEventListener("click",()=>setStrength(b.dataset.k, document.getElementById("strength"))));
+document.querySelectorAll("#ex-strength button").forEach(b=>b.addEventListener("click",()=>setStrength(b.dataset.k, document.getElementById("ex-strength"))));
+
+async function onSrc(file){
+  source=await fileToImage(file);
+  showDrop(document.getElementById("src-drop"), source.url);
+  document.getElementById("src-hint").textContent=source.width+"×"+source.height;
+  document.getElementById("cap-hint").textContent="约可写入 "+estimateMaxChars(source.width,source.height)+" 字";
+}
+async function onProbe(file){
+  probe=await fileToImage(file);
+  showDrop(document.getElementById("ex-drop"), probe.url);
+  document.getElementById("ex-hint").textContent=probe.width+"×"+probe.height;
+  const meta=readPngMeta(probe.buffer);
+  if(meta){
+
+    const k=meta.d1===24?"subtle":meta.d1===48?"robust":"standard";
+    setStrength(k, document.getElementById("ex-strength"));
+    document.getElementById("ex-fast").checked=!!meta.fast;
+    toast("已读取图内标记");
+  }
+}
+bindDrop(document.getElementById("src-drop"), document.getElementById("src-file"), onSrc);
+bindDrop(document.getElementById("ex-drop"), document.getElementById("ex-file"), async f=>{ document.getElementById("extract-out").classList.add("hidden"); document.getElementById("ex-status").textContent=""; await onProbe(f); });
+window.addEventListener("paste",e=>{
+  const f=[...e.clipboardData.files].find(x=>x.type.startsWith("image/"));
+  if(!f) return;
+  const tab=document.querySelector(".tabs button.active").dataset.tab;
+  if(tab==="extract"){ onProbe(f); }
+  else if(tab==="embed") onSrc(f);
+});
+
+document.getElementById("sample-btn").onclick=()=>{
+  const s=makeSampleRgba(720,480);
+  const url=rgbaToCanvas(s.rgba,s.width,s.height).toDataURL("image/png");
+  source={rgba:s.rgba,width:s.width,height:s.height,url,buffer:new ArrayBuffer(0),name:"sample.png"};
+  showDrop(document.getElementById("src-drop"), url);
+  document.getElementById("src-hint").textContent="720×480";
+  document.getElementById("cap-hint").textContent="约可写入 "+estimateMaxChars(720,480)+" 字";
+  toast("已载入样张");
+};
+
+document.getElementById("embed-btn").onclick=async (e)=>{
+  e.preventDefault();
+  if(!source){ toast("请先选择图片"); return; }
+  const text=document.getElementById("wm-text").value.trim();
+  if(!text){ toast("请填写水印文本"); return; }
+  const btn=document.getElementById("embed-btn");
+  btn.disabled=true; btn.textContent="写入中…";
+  try{
+    await new Promise(r=>setTimeout(r,30));
+    const pwd=parsePassword(document.getElementById("password").value);
+    const p=PRESETS[strength];
+    const fast=document.getElementById("fast").checked;
+    if(!document.getElementById("password").value.trim()||document.getElementById("password").value.trim()==="1"){ toast("请换一个不容易猜的密钥"); return; }
+    const bits=frameBitsFor(text);
+    const work=new Uint8ClampedArray(source.rgba);
+    const kept=l2Embed(work,source.width,source.height,pwd,text);
+    const result=embedWatermark({rgba:work,width:source.width,height:source.height,bits,passwordImg:pwd,passwordWm:pwd,d1:p.d1,d2:p.d2,fast});
+    const png=await new Promise((res,rej)=>rgbaToCanvas(result.rgba,source.width,source.height).toBlob(b=>b?res(b):rej(),"image/png"));
+    const stamped=injectPngMeta(await png.arrayBuffer(), {v:2,len:result.wmSize,w:source.width,h:source.height,d1:p.d1,d2:p.d2,fast});
+    embedBlob=stamped;
+    if(embedUrl) URL.revokeObjectURL(embedUrl);
+    embedUrl=URL.createObjectURL(stamped);
+    sourceUrl=source.url;
+    const box=document.getElementById("compare");
+    box.innerHTML="";
+    const after=document.createElement("img"); after.src=embedUrl; box.appendChild(after);
+    const before=document.createElement("img"); before.src=sourceUrl; before.className="before"; before.style.clipPath="inset(0 46% 0 0)"; box.appendChild(before);
+    const range=document.createElement("input"); range.type="range"; range.min=4; range.max=96; range.value=54;
+    range.style.cssText="position:absolute;inset:0;opacity:0;cursor:ew-resize;width:100%;height:100%";
+    range.oninput=()=>{ before.style.clipPath=`inset(0 ${100-range.value}% 0 0)`; };
+    box.appendChild(range);
+    document.getElementById("wm-len-out").textContent=kept||"（空）";
+    document.getElementById("embed-result").classList.remove("hidden");
+    toast("水印已写入");
+  }catch(err){ toast(err.message||"嵌入失败"); }
+  finally{ btn.disabled=false; btn.textContent="写入水印"; }
+};
+
+document.getElementById("dl-btn").onclick=()=>{
+  if(!embedBlob) return;
+  const a=document.createElement("a"); a.href=URL.createObjectURL(embedBlob); a.download="yinyin-kangjietu.png"; a.click();
+};
+document.getElementById("copy-len").onclick=()=>{ navigator.clipboard.writeText(document.getElementById("wm-len-out").textContent); toast("已复制"); };
+
+let exWorker=null;
+function getWorker(){
+  if(exWorker) return exWorker;
+  const src=document.getElementById("yy-engine").textContent+`
+self.onmessage=(e)=>{const d=e.data,o=d.opt;try{
+  const l2=l2Extract(d.img.rgba,d.img.w,d.img.h,o.pwd,(t)=>{if(t%3===1)self.postMessage({progress:t});});
+  let full=null; try{ full=extractFrame({rgba:d.img.rgba,width:d.img.w,height:d.img.h,passwordImg:o.pwd,passwordWm:o.pwd,d1:o.d1,d2:o.d2,fast:o.fast},0); }catch(_){}
+  self.postMessage({done:{l2,full}});
+}catch(err){self.postMessage({error:String(err&&err.message||err)});}};`;
+  exWorker=new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+  return exWorker;
+}
+function parseSize(t){ const m=String(t||"").match(/(\d+)\s*[x×*,， ]\s*(\d+)/i); return m?[+m[1],+m[2]]:null; }
+document.getElementById("extract-btn").onclick=async (e)=>{
+  e.preventDefault();
+  if(!probe){ toast("请先选择图片"); return; }
+  const btn=document.getElementById("extract-btn"), st=document.getElementById("ex-status");
+  btn.disabled=true; btn.textContent="提取中…"; st.textContent="";
+  const p=PRESETS[strength];
+  const opt={pwd:parsePassword(document.getElementById("ex-password").value),d1:p.d1,d2:p.d2,
+    fast:document.getElementById("ex-fast").checked};
+  if(!document.getElementById("ex-password").value.trim()){ toast("请填写密钥"); btn.disabled=false; btn.textContent="提取水印"; return; }
+  const img={rgba:new Uint8ClampedArray(probe.rgba),w:probe.width,h:probe.height};
+  try{
+    const r=await new Promise((res,rej)=>{
+      const w=getWorker();
+      w.onmessage=(ev)=>{ const d=ev.data;
+        if(d.progress) st.textContent=`正在对齐… ${d.progress}`;
+        else if(d.error) rej(new Error(d.error)); else res(d.done); };
+      w.onerror=(er)=>rej(new Error(er.message||"提取失败"));
+      w.postMessage({img,opt},[img.rgba.buffer]);
+    });
+    const {l2,full}=r;
+    if(!l2&&!full){ st.textContent="没找到能通过校验的水印。检查密钥是否一致。"; document.getElementById("extract-out").classList.add("hidden"); return; }
+    document.getElementById("extract-text").textContent=l2?(l2.text||"（空）"):(full.text||"（空）");
+    const scale=l2?Math.round(12800/((l2.px+l2.py)/2))/100:1;
+    const kn=["","（已翻转）","（已翻转）","（已转 180°）","（已转 90°）","（已转 90°）","（已转 90°）","（已转 90°）"];
+    st.textContent=l2?`抗截图层校验通过 · 相对原图约 ${Math.round(100/scale)}% 大小${kn[l2.k]||""}`:"完整文本层校验通过";
+    document.getElementById("extract-full").textContent=full&&l2?("完整文本：" + full.text):(l2?"完整文本层读不出（图片被裁切或缩放过），以上为前 16 字节。":"");
+    document.getElementById("extract-out").classList.remove("hidden");
+  }catch(err){ toast(err.message||"提取失败"); }
+  finally{ btn.disabled=false; btn.textContent="提取水印"; }
+};
+document.getElementById("copy-text").onclick=()=>{ navigator.clipboard.writeText(document.getElementById("extract-text").textContent); toast("已复制"); };
+</script>
+</body>
+</html>
