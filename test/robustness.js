@@ -114,6 +114,29 @@ elif k=="rot90":
     c=im.transpose(Image.Transpose.ROTATE_90)
 elif k=="shot":
     c=im.resize((786,331), Image.Resampling.BICUBIC)
+elif k.startswith("phone"):
+    # 手机截屏：图按比例缩到 r 宽，贴在纯色画布中间，上方有状态栏，图右上角压一个半透明按钮，底部黑边上有点赞评论按钮
+    from PIL import ImageDraw
+    _, r, bg = k.split(":")
+    r = float(r)
+    dw = round(im.width * r); dh = round(im.height * dw / im.width)
+    cw, ch = dw, round(dw * 2.17)
+    col = (0, 0, 0) if bg == "black" else (255, 255, 255)
+    fg = (255, 255, 255, 255) if bg == "black" else (20, 20, 20, 255)
+    c = Image.new("RGB", (cw, ch), col)
+    top = (ch - dh) // 2
+    c.paste(im.resize((dw, dh), Image.Resampling.LANCZOS), (0, top))
+    d = ImageDraw.Draw(c, "RGBA")
+    d.text((16, 10), "18:23", fill=fg)
+    d.rectangle((cw - 50, 12, cw - 18, 22), fill=fg)
+    bx, by = cw - int(cw * 0.22), top + int(cw * 0.03)
+    d.rounded_rectangle((bx, by, bx + int(cw * 0.19), by + int(cw * 0.065)), radius=int(cw * 0.03), fill=(30, 30, 30, 150))
+    d.text((bx + 8, by + 4), "AI", fill=(255, 255, 255, 255))
+    yb = ch - int(ch * 0.09)
+    for i in range(4):
+        x = int(cw * (0.1 + 0.22 * i))
+        d.ellipse((x, yb, x + int(cw * 0.07), yb + int(cw * 0.07)), outline=fg, width=2)
+    d.text((16, ch - int(ch * 0.16)), "@user  1234", fill=fg)
 else:
     raise SystemExit("bad "+k)
 open(${JSON.stringify(out)},"wb").write(c.convert("RGBA").tobytes())
@@ -214,6 +237,35 @@ for (const k of ["scale50", "shot", "flip", "rot90", "cropback", "cropsmall", "r
 {
   const g = geom(em.rgba, W, H, "shot");
   check(g, "shot without original size", { known: null });
+}
+
+// 手机截屏：上下纯色边、缩小、UI 按钮压在图上，有时再存成 JPEG
+function jpegOf(g, q) {
+  const j = jpegAt(g.rgba, g.w, g.h, q);
+  return { rgba: j.rgba, w: g.w, h: g.h };
+}
+for (const [k, q, known] of [
+  ["phone:0.4:black", 0, true], ["phone:0.4:black", 0, false], ["phone:0.4:black", 85, false],
+  ["phone:0.3:black", 0, true], ["phone:0.3:black", 85, false], ["phone:1:black", 90, false],
+  ["phone:0.44:white", 0, false],
+]) {
+  let g = geom(em.rgba, W, H, k);
+  if (q) g = jpegOf(g, q);
+  check(g, `screenshot ${k.slice(6)} ${g.w}×${g.h}${q ? " jpeg q" + q : ""}${known ? "" : " without original size"}`, known ? undefined : { known: null });
+}
+// 大片接近纯白的图：写入时要按截断后的亮度去凑目标，否则这些块一开始就是错的
+{
+  const bright = new Uint8ClampedArray(src);
+  for (let i = 0; i < bright.length; i += 4) for (let c = 0; c < 3; c++) bright[i + c] = Math.min(255, src[i + c] * 0.35 + 175);
+  const eb = embedV3(bright, W, H, TEXT, 1, standard.step, standard.parity);
+  record("bright image png", extractV3(eb.rgba, W, H, 1, standard.step, standard.parity) === TEXT, "");
+  const g = jpegOf(geom(eb.rgba, W, H, "phone:0.4:black"), 85);
+  const t0 = Date.now();
+  const r = recoverWatermark(g, {
+    password: 1, step: standard.step, parity: standard.parity, d1: standard.d1, d2: standard.d2,
+    fast: false, known: null, legacyLen: 0, deep: true,
+  });
+  record(`bright image screenshot 0.4 jpeg q85 without original size`, !!(r && r.text === TEXT), `${Date.now() - t0}ms ${r && r.note ? r.note : ""}`.trim());
 }
 
 record("wrong key", extractV3(em.rgba, W, H, 99, standard.step, standard.parity) === null, "");

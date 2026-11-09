@@ -222,7 +222,7 @@ footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:fle
           <input type="checkbox" id="ex-fast"/>
         </div>
         <div class="switch-row">
-          <div><div style="font-size:14px;font-weight:500">深度找回</div><div class="hint">失败时再试裁边、缩放、翻转和小角度旋转</div></div>
+          <div><div style="font-size:14px;font-weight:500">深度找回</div><div class="hint">失败时再试手机截屏边框、裁边、缩放、翻转和小角度旋转</div></div>
           <input type="checkbox" id="ex-deep" checked/>
         </div>
         <button type="button" class="btn" id="extract-btn">提取水印</button>
@@ -238,7 +238,7 @@ footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:fle
   <section id="tab-about" class="hidden about">
     <p>水印仍是“魔数 + 长度 + 文本 + CRC32”的帧，外面再加一层纠错码。提取不需要原图，只需要对上密钥和强度。</p>
     <p>新写入的图把这一帧藏在亮度的低频里：每个 16×16 小块的平均亮度被轻轻推到一个量化格上，块与块之间用平滑过渡，避免出现硬边格子。直接读不对时，深度找回会估计裁切、缩放、翻转和大约 ±28° 的旋转，把格子对回去再读。</p>
-    <p>按一张 1200×500 左右、本身有纹理的照片、强度选「标准」来记：原图、常见缩放、JPEG 质量 50，以及质量大约 20（文件压到两万字节左右）可以校验通过。水平翻转和 90° 旋转，打开深度找回后可以对上。带白边扩出来的大约 15° 旋转、截图缩到大约三分之二，填上原图尺寸后也能对上。四边各裁掉约一成再缩放，以及转完按原框裁掉四角的小角度旋转，在大片平坦区域的图上经常解不开。质量大约 10（文件再小一半）在「标准」下经常失败，要选「强」。</p>
+    <p>按一张 1200×500 左右、本身有纹理的照片、强度选「标准」来记：原图、常见缩放、JPEG 质量 50，以及质量大约 20（文件压到两万字节左右）可以校验通过。水平翻转和 90° 旋转，打开深度找回后可以对上。带白边扩出来的大约 15° 旋转、截图缩到大约三分之二，填上原图尺寸后也能对上。四边各裁掉约一成再缩放，以及转完按原框裁掉四角的小角度旋转，在大片平坦区域的图上经常解不开。手机截屏（上下黑边或白边、图被缩到原宽的两成到一倍、图上压着按钮）会先找出图片区域再对齐，不填原图尺寸也能对上；缩到原宽两成以下时每个小块只剩两三个像素，基本解不开。质量大约 10（文件再小一半）在「标准」下经常失败，要选「强」。</p>
     <p>「强」把量化格拉大，平坦的天空里可能看出轻微起伏。请用对比滑块看过再发出去。「轻」更不容易看出来，也更不扛压缩。</p>
     <p>用同一套方法再写一遍，会换掉这一次写入的字。如果图里已经能提出水印，写入前会先请你确认。旧版（只做 DWT-DCT-SVD 的图）仍按原来的参数提取，不用重嵌。</p>
     <p>仍然困难的：对屏拍照的透视、每边裁掉约一成及以上（尤其是平坦区域多的图）、同画布小角度旋转、以及缩到只剩一小块。密钥只打乱位置，不是加密。不要把真正的机密写进水印。计算都在你的设备上完成，图片不会上传。</p>
@@ -1387,7 +1387,7 @@ function v3BoxMeans(Y, w, h, B) {
 }
 
 /** Raised-cosine bumps on a BxB grid. Iteratively hit per-block mean targets. */
-function v3ApplyTargets(baseY, w, h, B, target) {
+function v3ApplyTargets(baseY, w, h, B, target, rgba) {
   const bw = Math.floor(w / B), bh = Math.floor(h / B), n = bw * bh;
   const amp = new Float64Array(n);
   const { m: baseM } = v3BoxMeans(baseY, w, h, B);
@@ -1417,7 +1417,15 @@ function v3ApplyTargets(baseY, w, h, B, target) {
         }
       }
     }
-    for (let i = 0; i < cur.length; i++) cur[i] = baseY[i] + field[i];
+    if (rgba) {
+      // 按写回 RGB 时的截断来算亮度，接近纯白、纯黑的块也能把均值推到目标
+      for (let i = 0, j = 0; i < cur.length; i++, j += 4) {
+        const d = field[i];
+        let r = rgba[j] + d, g = rgba[j + 1] + d, b = rgba[j + 2] + d;
+        r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g; b = b < 0 ? 0 : b > 255 ? 255 : b;
+        cur[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+      }
+    } else for (let i = 0; i < cur.length; i++) cur[i] = baseY[i] + field[i];
     const { m } = v3BoxMeans(cur, w, h, B);
     let err = 0;
     for (let i = 0; i < n; i++) {
@@ -1450,9 +1458,13 @@ function embedV3(rgba, w, h, text, password, step, parity) {
     const k = inv[bi];
     const bit = sb[k % sb.length];
     const mean = m[bi];
-    target[bi] = (Math.floor(mean / step) + 0.25 + 0.5 * bit) * step;
+    let t = (Math.floor(mean / step) + 0.25 + 0.5 * bit) * step;
+    // 目标超出能写到的范围时换到同一比特的下一个（上一个）格点
+    if (t > 251) t -= step;
+    else if (t < 4) t += step;
+    target[bi] = t;
   }
-  const field = v3ApplyTargets(Y, w, h, B, target);
+  const field = v3ApplyTargets(Y, w, h, B, target, rgba);
   const out = new Uint8ClampedArray(rgba);
   let maxd = 0, sse = 0;
   for (let i = 0; i < w * h; i++) {
@@ -1467,7 +1479,7 @@ function embedV3(rgba, w, h, text, password, step, parity) {
   return { rgba: out, psnr, maxd, bits: bits.length };
 }
 
-function decodeV3Means(means, n, password, nbits, step) {
+function decodeV3Means(means, n, password, nbits, step, clipWt = 1) {
   const order = Array.from({ length: n }, (_, i) => i);
   shuffleInPlace(order, password >>> 0);
   const acc = new Float64Array(nbits);
@@ -1477,7 +1489,9 @@ function decodeV3Means(means, n, password, nbits, step) {
     let rem = mv % step;
     if (rem < 0) rem += step;
     const norm = rem / step;
-    acc[k % nbits] += (norm > 0.5 ? 1 : -1) * (0.12 + Math.abs(norm - 0.5));
+    // 旧版写入时接近纯白、纯黑的块会被截断，第二轮解码把它们的投票权重压低
+    const wt = mv > 245 || mv < 8 ? clipWt : 1;
+    acc[k % nbits] += (norm > 0.5 ? 1 : -1) * (0.12 + Math.abs(norm - 0.5)) * wt;
   }
   const got = new Uint8Array(nbits);
   for (let i = 0; i < nbits; i++) got[i] = acc[i] >= 0 ? 1 : 0;
@@ -1517,9 +1531,11 @@ function extractV3Mapped(atk, atkW, atkH, origW, origH, password, step, parity, 
     const nbytes = N + 6 + parity;
     const nbits = nbytes * 8;
     if (nbits >= n) continue;
-    const bits = decodeV3Means(m, n, password, nbits, step);
-    const text = v3Parse(bitsToBytes(bits), parity);
-    if (text !== null) return text;
+    for (const cw of [1, 0.3]) {
+      const bits = decodeV3Means(m, n, password, nbits, step, cw);
+      const text = v3Parse(bitsToBytes(bits), parity);
+      if (text !== null) return text;
+    }
   }
   return null;
 }
@@ -1546,9 +1562,11 @@ function extractV3(rgba, w, h, password, step, parity) {
     const nbytes = N + 6 + parity;
     const nbits = nbytes * 8;
     if (nbits >= n) continue;
-    const bits = decodeV3Means(m, n, password, nbits, step);
-    const text = v3Parse(bitsToBytes(bits), parity);
-    if (text !== null) return text;
+    for (const cw of [1, 0.3]) {
+      const bits = decodeV3Means(m, n, password, nbits, step, cw);
+      const text = v3Parse(bitsToBytes(bits), parity);
+      if (text !== null) return text;
+    }
   }
   return null;
 }
@@ -1612,7 +1630,184 @@ function bilinearRestore(atk, atkW, atkH, W, H, map) {
 function v3Try(atk, atkW, atkH, W, H, password, step, parity, map) {
   return extractV3Mapped(atk, atkW, atkH, W, H, password, step, parity, map);
 }
-/** 深度找回：小角度、居中裁边、等比缩放。成功才返回文本。 */
+/** 截屏：找出纯色边框（黑边、白边）围住的内嵌图片矩形。返回 [x, y, w, h]（像素边界），没有边框时返回 null。
+ * 边框上可以有少量按钮、文字；判断依据是一行（列）里接近边框颜色的像素占多数。 */
+function v3FindContentRect(rgba, w, h) {
+  if (w < 48 || h < 48) return null;
+  const Y = new Float32Array(w * h);
+  for (let i = 0, p = 0; p < Y.length; i += 4, p++) Y[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  // 边框颜色：四条边上像素亮度的众数
+  const hist = new Uint32Array(256);
+  let tot = 0;
+  for (let x = 0; x < w; x++) { hist[Y[x] | 0]++; hist[Y[(h - 1) * w + x] | 0]++; tot += 2; }
+  for (let y = 0; y < h; y++) { hist[Y[y * w] | 0]++; hist[Y[y * w + w - 1] | 0]++; tot += 2; }
+  let mode = 0, best = -1;
+  for (let v = 0; v < 256; v++) {
+    let s = 0;
+    for (let d = -3; d <= 3; d++) if (v + d >= 0 && v + d < 256) s += hist[v + d];
+    if (s > best) { best = s; mode = v; }
+  }
+  if (best < tot * 0.5) return null;
+  const near = (v) => Math.abs(v - mode) <= 10;
+  const longestRun = (flags, n) => {
+    // flags[i] = 1 表示内容；允许 2 像素以内的空隙（图里偶尔有整行接近边框色）
+    let bs = -1, be = -1, s = -1, gap = 0, last = -1;
+    for (let i = 0; i <= n; i++) {
+      if (i < n && flags[i]) {
+        if (s < 0 || gap > 2) s = i;
+        gap = 0; last = i;
+        if (last - s > be - bs) { bs = s; be = last; }
+      } else if (s >= 0) gap++;
+    }
+    return bs < 0 ? null : [bs, be + 1];
+  };
+  const rowFlag = new Uint8Array(h);
+  for (let y = 0; y < h; y++) {
+    let c = 0;
+    for (let x = 0, o = y * w; x < w; x++) if (near(Y[o + x])) c++;
+    rowFlag[y] = c < w * 0.7 ? 1 : 0;
+  }
+  const ry = longestRun(rowFlag, h);
+  if (!ry) return null;
+  const colFlag = new Uint8Array(w);
+  const rh = ry[1] - ry[0];
+  for (let x = 0; x < w; x++) {
+    let c = 0;
+    for (let y = ry[0]; y < ry[1]; y++) if (near(Y[y * w + x])) c++;
+    colFlag[x] = c < rh * 0.7 ? 1 : 0;
+  }
+  const rx = longestRun(colFlag, w);
+  if (!rx) return null;
+  const rect = [rx[0], ry[0], rx[1] - rx[0], rh];
+  if (rect[2] < 32 || rect[3] < 32) return null;
+  if (rect[2] * rect[3] < w * h * 0.08) return null;
+  if (rect[2] >= w - 1 && rect[3] >= h - 1) return null;
+  return rect;
+}
+globalThis.v3FindContentRect = v3FindContentRect;
+
+/** 截屏 / 不知道原尺寸的缩放：把矩形 rect（截图坐标）当成整张原图，扫描原图宽度，用对齐分数挑出最像的尺寸，
+ * 再对矩形位置和缩放做亚像素微调后解码。缩到四成左右时，对齐误差要小于截图里约 0.1 像素才解得开。 */
+function v3SearchRect(img, rect, opt) {
+  const { rgba, w, h } = img;
+  const { password, step, parity, known } = opt;
+  const B = V3_BLOCK;
+  const [rx, ry, rw, rh] = rect;
+  const Y = new Float32Array(w * h);
+  for (let i = 0, p = 0; p < Y.length; i += 4, p++) Y[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  // 采样限制在矩形内部，免得双线性插值混进黑边
+  const xlo = rx, xhi = rx + rw - 1.001, ylo = ry, yhi = ry + rh - 1.001;
+  const lumAt = (px, py) => {
+    if (px < xlo - 0.75 || py < ylo - 0.75 || px > xhi + 0.75 || py > yhi + 0.75) return NaN;
+    px = px < xlo ? xlo : px > xhi ? xhi : px;
+    py = py < ylo ? ylo : py > yhi ? yhi : py;
+    const x0 = px | 0, y0 = py | 0, fx = px - x0, fy = py - y0, o = y0 * w + x0;
+    return (Y[o] * (1 - fx) + Y[o + 1] * fx) * (1 - fy) + (Y[o + w] * (1 - fx) + Y[o + w + 1] * fx) * fy;
+  };
+  // g = [ox, oy, cw, ch]：原图 (W,H) 铺满截图里从 (ox,oy) 起、宽 cw 高 ch 的区域
+  // 原图连续坐标 u 对应截图连续坐标 ox + u·cw/W，再减半像素换成像素中心坐标
+  const fastScore = (W, H, g) => {
+    const bw = Math.floor(W / B), bh = Math.floor(H / B);
+    if (bw * bh < 64) return 1;
+    const stride = Math.max(1, Math.ceil(Math.sqrt((bw * bh) / 900)));
+    const sx = g[2] / W, sy = g[3] / H, ox = g[0] - 0.5, oy = g[1] - 0.5;
+    let acc = 0, cnt = 0;
+    for (let by = 0; by < bh; by += stride) {
+      for (let bx = (by / stride) % 2 ? stride >> 1 : 0; bx < bw; bx += stride) {
+        let s = 0, c = 0;
+        for (let yy = 2; yy < B; yy += 4) {
+          const py = oy + (by * B + yy) * sy;
+          for (let xx = 2; xx < B; xx += 4) {
+            const v = lumAt(ox + (bx * B + xx) * sx, py);
+            if (v === v) { s += v; c++; }
+          }
+        }
+        if (c < 12) continue;
+        let rem = (s / c) % step;
+        if (rem < 0) rem += step;
+        const norm = rem / step;
+        acc += Math.min(Math.abs(norm - 0.25), Math.abs(norm - 0.75));
+        cnt++;
+      }
+    }
+    return cnt < 40 ? 1 : acc / cnt;
+  };
+  const base = [rx, ry, rw, rh];
+  const cands = [];
+  if (known) cands.push([known[0], known[1]]);
+  else {
+    // 宽度从矩形的一半扫到 5 倍（手机截屏常把大图缩到四成上下，再小到两成），高度按矩形宽高比
+    const lo = Math.max(64, Math.round(rw * 0.5)), hi = Math.min(4096, Math.round(rw * 5));
+    const scored = [];
+    for (let W = lo; W <= hi; W += W < 1200 ? 2 : 4) {
+      const H = Math.round(W * rh / rw);
+      if (H < 64 || H > 4096) continue;
+      scored.push({ s: fastScore(W, H, base), W, H });
+    }
+    const loc = scored.filter((p, i) => (i === 0 || p.s <= scored[i - 1].s) && (i === scored.length - 1 || p.s <= scored[i + 1].s));
+    loc.sort((a, b) => a.s - b.s);
+    for (const p of loc.slice(0, 4)) if (p.s < 0.105) cands.push([p.W, p.H]);
+  }
+  // 块数由原尺寸决定（floor(W/16)），只需试附近几种块数；位置、缩放靠微调
+  const grids = [];
+  for (const [W0, H0] of cands) {
+    const spread = known ? [0] : [-8, 0, 8];
+    for (const dw of spread) for (const dh of spread) {
+      const W = Math.floor((W0 + dw) / B) * B, H = Math.floor((H0 + dh) / B) * B;
+      if (W < 64 || H < 64 || grids.some((q) => q.W === W && q.H === H)) continue;
+      // 实际原尺寸可能比 16 的整数倍多出几像素：按候选尺寸换算这部分所占的截图宽度
+      const g = known ? [rx, ry, rw * W / known[0], rh * H / known[1]] : [rx, ry, rw * W / W0, rh * H / H0];
+      grids.push({ W, H, g });
+    }
+  }
+  const tried = new Set();
+  const decode = (W, H, g) => {
+    const key = W + "," + H + "," + g.map((v) => v.toFixed(3)).join(",");
+    if (tried.has(key)) return null;
+    tried.add(key);
+    const sx = g[2] / W, sy = g[3] / H, ox = g[0] - 0.5, oy = g[1] - 0.5;
+    const map = (x, y) => {
+      // extractV3Mapped 传入的是每隔一像素的采样点（偏左上半像素），这里补回块中心
+      let px = ox + (x + 0.5) * sx, py = oy + (y + 0.5) * sy;
+      if (px < xlo - 0.75 || py < ylo - 0.75 || px > xhi + 0.75 || py > yhi + 0.75) return null;
+      px = px < xlo ? xlo : px > xhi ? xhi : px;
+      py = py < ylo ? ylo : py > yhi ? yhi : py;
+      return [px, py];
+    };
+    return v3Try(rgba, w, h, W, H, password, step, parity, map);
+  };
+  for (const q of grids) {
+    let g = q.g.slice(), s = fastScore(q.W, q.H, g);
+    // 坐标下降：位置和跨度各自试 ±步长，步长逐级减半
+    for (const st of [1, 0.5, 0.25, 0.125, 0.0625]) {
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        for (let k = 0; k < 4; k++) {
+          for (const d of [st, -st]) {
+            const t = g.slice();
+            t[k] += k < 2 ? d : d * 2;
+            const ts = fastScore(q.W, q.H, t);
+            if (ts < s) { s = ts; g = t; moved = true; }
+          }
+        }
+        if (!moved) break;
+      }
+    }
+    if (s > 0.1) continue;
+    let t = decode(q.W, q.H, g);
+    const est = (gg) => known ? known : [Math.round(q.W * rw / gg[2]), Math.round(q.H * rh / gg[3])];
+    if (t !== null) return { text: t, W: est(g)[0], H: est(g)[1], s };
+    for (const dx of [-0.0625, 0.0625]) for (const k of [0, 1]) {
+      const g2 = g.slice(); g2[k] += dx;
+      t = decode(q.W, q.H, g2);
+      if (t !== null) return { text: t, W: est(g2)[0], H: est(g2)[1], s };
+    }
+  }
+  return null;
+}
+globalThis.v3SearchRect = v3SearchRect;
+
+/** 深度找回：截屏黑边、小角度、居中裁边、等比缩放。成功才返回文本。 */
 function searchV3(img, opt) {
   const { rgba, w, h } = img;
   const { password, step, parity, known } = opt;
@@ -1652,6 +1847,15 @@ function searchV3(img, opt) {
       const t = tryMap(W, H, map);
       if (t !== null) return { text: t, note: (W !== w || H !== h) ? `已缩放到 ${W}×${H}` : "" };
     }
+  }
+  // 手机截屏：上下（或四周）有纯色边框，图在中间被缩放。先找出内嵌矩形再扫原尺寸。
+  const rect = v3FindContentRect(rgba, w, h);
+  if (rect) {
+    const r = v3SearchRect(img, rect, { password, step, parity, known });
+    if (r) return { text: r.text, note: `已裁掉截屏边框（图片区域 ${rect[2]}×${rect[3]}，位置 ${rect[0]},${rect[1]}）并缩放到${known ? "" : "约 "}${r.W}×${r.H}` };
+  } else if (!known) {
+    const r = v3SearchRect(img, [0, 0, w, h], { password, step, parity, known });
+    if (r) return { text: r.text, note: `已缩放到约 ${r.W}×${r.H}` };
   }
   // 居中裁边后再缩放。c 是每边裁掉的比例。
   const cropSizes = known ? [[known[0], known[1]]] : sizes.slice(0, 6);
