@@ -137,6 +137,45 @@ elif k.startswith("phone"):
         x = int(cw * (0.1 + 0.22 * i))
         d.ellipse((x, yb, x + int(cw * 0.07), yb + int(cw * 0.07)), outline=fg, width=2)
     d.text((16, ch - int(ch * 0.16)), "@user  1234", fill=fg)
+elif k=="crop2":
+    x0,y0=round(im.width*0.02),round(im.height*0.02)
+    c=im.crop((x0,y0,im.width-x0,im.height-y0))
+elif k=="aniso":
+    c=im.resize((im.width, round(im.height*0.7)), Image.Resampling.BICUBIC)
+elif k in ("social","rot2crop"):
+    import io
+    if k=="social":
+        x0,y0=round(im.width*0.05),round(im.height*0.05)
+        c=im.crop((x0,y0,im.width-x0,im.height-y0)); c=c.resize((1000, round(c.height*1000/c.width)), Image.Resampling.LANCZOS); q=75
+    else:
+        c=im.rotate(2, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255,255,255))
+        x0,y0=round(c.width*0.05),round(c.height*0.05); c=c.crop((x0,y0,c.width-x0,c.height-y0)); q=70
+    b=io.BytesIO(); c.save(b,"JPEG",quality=q); b.seek(0); c=Image.open(b).convert("RGB")
+elif k=="border":
+    from PIL import ImageOps
+    c=ImageOps.expand(im,border=40,fill=(128,128,128))
+elif k=="rot30":
+    c=im.rotate(30, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255,255,255))
+elif k=="persp2":
+    import numpy as np
+    w,h=im.size; d=0.02*w
+    src=[(0,0),(w,0),(w,h),(0,h)]; dst=[(d,d*0.5),(w-d*0.3,0),(w,h),(d*0.2,h-d*0.4)]
+    A=[];B=[]
+    for (x,y),(X,Y) in zip(dst,src):
+        A.append([x,y,1,0,0,0,-X*x,-X*y]);B.append(X)
+        A.append([0,0,0,x,y,1,-Y*x,-Y*y]);B.append(Y)
+    co=np.linalg.solve(np.array(A,float),np.array(B,float))
+    c=im.transform(im.size,Image.Transform.PERSPECTIVE,tuple(co),Image.Resampling.BICUBIC,fillcolor=(255,255,255))
+elif k in ("bright","darker","contrast06","gamma06","gamma18","invert","hue90"):
+    from PIL import ImageEnhance, ImageOps
+    if k=="bright": c=ImageEnhance.Brightness(im).enhance(1.2)
+    elif k=="darker": c=ImageEnhance.Brightness(im).enhance(0.7)
+    elif k=="contrast06": c=ImageEnhance.Contrast(im).enhance(0.6)
+    elif k=="gamma06": c=im.point(lambda v: round(255*(v/255)**0.6))
+    elif k=="gamma18": c=im.point(lambda v: round(255*(v/255)**1.8))
+    elif k=="invert": c=ImageOps.invert(im)
+    else:
+        hh,ss,vv=im.convert("HSV").split(); hh=hh.point(lambda x:(x+64)%256); c=Image.merge("HSV",(hh,ss,vv)).convert("RGB")
 else:
     raise SystemExit("bad "+k)
 open(${JSON.stringify(out)},"wb").write(c.convert("RGBA").tobytes())
@@ -268,7 +307,55 @@ for (const [k, q, known] of [
   record(`bright image screenshot 0.4 jpeg q85 without original size`, !!(r && r.text === TEXT), `${Date.now() - t0}ms ${r && r.note ? r.note : ""}`.trim());
 }
 
+// 通用几何找回：裁一点、不等比缩放、转发链路、旋转加裁边、灰边、大角度旋转、轻透视，都不填原尺寸
+for (const k of ["crop2", "aniso", "social", "rot2crop", "border", "rot30", "persp2"]) {
+  const g = geom(em.rgba, W, H, k);
+  check(g, `${k} ${g.w}×${g.h} without original size`, { known: null });
+}
+// 调色：亮度、对比度、伽马、反色、色相
+for (const k of ["bright", "darker", "contrast06", "gamma06", "gamma18", "invert", "hue90"]) {
+  const g = geom(em.rgba, W, H, k);
+  check(g, `tone ${k}`, { known: null });
+}
+// 旧版（向下取整选格点）写入的图仍能读，包括深度找回
+function embedV3Legacy(rgba, w, h, text, password, step, parity) {
+  const bits = bytesToBits(v3Codeword(text, parity));
+  const B = 16, n = Math.floor(w / B) * Math.floor(h / B);
+  const order = Array.from({ length: n }, (_, i) => i);
+  shuffleInPlace(order, password >>> 0);
+  const sb = shuffledBits(bits, (password + 0x9e3779b9) >>> 0);
+  const Y = new Float64Array(w * h);
+  v3Luma(rgba, Y);
+  const { m } = v3BoxMeans(Y, w, h, B);
+  const inv = new Int32Array(n);
+  for (let k = 0; k < n; k++) inv[order[k]] = k;
+  const target = new Float64Array(n);
+  for (let bi = 0; bi < n; bi++) {
+    let t = (Math.floor(m[bi] / step) + 0.25 + 0.5 * sb[inv[bi] % sb.length]) * step;
+    if (t > 251) t -= step; else if (t < 4) t += step;
+    target[bi] = t;
+  }
+  const field = v3ApplyTargets(Y, w, h, B, target, rgba);
+  const out = new Uint8ClampedArray(rgba);
+  for (let i = 0; i < w * h; i++) { out[i * 4] += field[i]; out[i * 4 + 1] += field[i]; out[i * 4 + 2] += field[i]; }
+  return out;
+}
+{
+  const old = embedV3Legacy(src, W, H, TEXT, 1, standard.step, standard.parity);
+  record("legacy-lattice v3 png", extractV3(old, W, H, 1, standard.step, standard.parity) === TEXT, "");
+  check(jpegOf({ rgba: old, w: W, h: H }, 75), "legacy-lattice v3 jpeg q75", { known: null });
+  check(geom(old, W, H, "crop2"), "legacy-lattice v3 crop2 without original size", { known: null });
+  check(geom(old, W, H, "gamma06"), "legacy-lattice v3 gamma 0.6", { known: null });
+  console.log(`psnr new ${em.psnr.toFixed(2)}`);
+}
+
 record("wrong key", extractV3(em.rgba, W, H, 99, standard.step, standard.parity) === null, "");
+// 深度找回用错密钥也不能读出东西（几何、调色搜索都不该误报）
+for (const k of ["rot2crop", "gamma06"]) {
+  const g = geom(em.rgba, W, H, k);
+  const r = recoverWatermark(g, { password: 99, step: standard.step, parity: standard.parity, d1: standard.d1, d2: standard.d2, fast: false, known: null, legacyLen: 0, deep: true });
+  record(`wrong key deep ${k}`, !r, r ? r.text : "");
+}
 
 // legacy v2 still extracts
 {

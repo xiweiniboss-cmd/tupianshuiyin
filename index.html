@@ -1510,10 +1510,13 @@ function embedV3(rgba, w, h, text, password, step, parity) {
     const k = inv[bi];
     const bit = sb[k % sb.length];
     const mean = m[bi];
-    let t = (Math.floor(mean / step) + 0.25 + 0.5 * bit) * step;
-    // 目标超出能写到的范围时换到同一比特的下一个（上一个）格点
-    if (t > 251) t -= step;
-    else if (t < 4) t += step;
+    // 取同一比特里离当前均值最近的格点，改动平均只有原来“向下取整”写法的一半多一点；
+    // 太靠近 0 / 255 的格点写不进去（会被截断），换成另一侧的。纯白、纯黑块如果本身就在格点上就不动。
+    const off = (0.25 + 0.5 * bit) * step;
+    let t = Math.round((mean - off) / step) * step + off;
+    const hi = Math.max(251, Math.min(255, mean)), lo = Math.min(4, Math.max(0, mean));
+    if (t > hi) t -= step;
+    else if (t < lo) t += step;
     target[bi] = t;
   }
   const field = v3ApplyTargets(Y, w, h, B, target, rgba);
@@ -1700,13 +1703,14 @@ function v3FindContentRect(rgba, w, h) {
     if (s > best) { best = s; mode = v; }
   }
   if (best < tot * 0.5) return null;
-  const near = (v) => Math.abs(v - mode) <= 10;
+  const near = (v) => Math.abs(v - mode) <= 8;
   const longestRun = (flags, n) => {
-    // flags[i] = 1 表示内容；允许 2 像素以内的空隙（图里偶尔有整行接近边框色）
+    // flags[i] = 1 表示内容；允许少量空隙（图里偶尔有整行接近边框色）
+    const maxGap = Math.max(2, Math.round(n * 0.004));
     let bs = -1, be = -1, s = -1, gap = 0, last = -1;
     for (let i = 0; i <= n; i++) {
       if (i < n && flags[i]) {
-        if (s < 0 || gap > 2) s = i;
+        if (s < 0 || gap > maxGap) s = i;
         gap = 0; last = i;
         if (last - s > be - bs) { bs = s; be = last; }
       } else if (s >= 0) gap++;
@@ -1717,7 +1721,8 @@ function v3FindContentRect(rgba, w, h) {
   for (let y = 0; y < h; y++) {
     let c = 0;
     for (let x = 0, o = y * w; x < w; x++) if (near(Y[o + x])) c++;
-    rowFlag[y] = c < w * 0.7 ? 1 : 0;
+    // 边框行几乎全是边框色；图里大片接近灰 / 黑 / 白的行通常也到不了八成；按钮、浮层只占一小段
+    rowFlag[y] = c < w * 0.8 ? 1 : 0;
   }
   const ry = longestRun(rowFlag, h);
   if (!ry) return null;
@@ -1726,13 +1731,14 @@ function v3FindContentRect(rgba, w, h) {
   for (let x = 0; x < w; x++) {
     let c = 0;
     for (let y = ry[0]; y < ry[1]; y++) if (near(Y[y * w + x])) c++;
-    colFlag[x] = c < rh * 0.7 ? 1 : 0;
+    colFlag[x] = c < rh * 0.8 ? 1 : 0;
   }
   const rx = longestRun(colFlag, w);
   if (!rx) return null;
   const rect = [rx[0], ry[0], rx[1] - rx[0], rh];
   if (rect[2] < 32 || rect[3] < 32) return null;
-  if (rect[2] * rect[3] < w * h * 0.08) return null;
+  // 手机截屏里缩到四成宽的图只占整屏约 5%，再小一些也要能找到
+  if (rect[2] * rect[3] < w * h * 0.01) return null;
   if (rect[2] >= w - 1 && rect[3] >= h - 1) return null;
   return rect;
 }
@@ -1859,6 +1865,563 @@ function v3SearchRect(img, rect, opt) {
 }
 globalThis.v3SearchRect = v3SearchRect;
 
+/* @@V3G-BEGIN */
+/* ===== v3 通用几何找回：把原图 16×16 分块当成周期网格，先找网格（缩放、旋转、相位），再找块号偏移 ===== */
+function v3gPrep(rgba, w, h, lut) {
+  const Y = new Float32Array(w * h);
+  if (lut) for (let i = 0, p = 0; p < Y.length; i += 4, p++) Y[p] = 0.299 * lut[rgba[i]] + 0.587 * lut[rgba[i + 1]] + 0.114 * lut[rgba[i + 2]];
+  else for (let i = 0, p = 0; p < Y.length; i += 4, p++) Y[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  return { Y, w, h, cache: new Map() };
+}
+/** k×k 盒式平均（窗口 [x-⌊k/2⌋, x-⌊k/2⌋+k-1]），偶数 k 的中心偏半像素，由采样时补回 */
+function v3gBox(P, k) {
+  if (k <= 1) return P.Y;
+  if (P.cache.has(k)) return P.cache.get(k);
+  const { Y, w, h } = P, r = k >> 1, t = new Float32Array(w * h), o = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w; let s = 0, c = 0;
+    for (let x = -r; x < k - r; x++) if (x >= 0 && x < w) { s += Y[row + x]; c++; }
+    for (let x = 0; x < w; x++) {
+      t[row + x] = s / c;
+      const a = x - r, b = x - r + k;
+      if (a >= 0 && a < w) { s -= Y[row + a]; c--; }
+      if (b >= 0 && b < w) { s += Y[row + b]; c++; }
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0, c = 0;
+    for (let y = -r; y < k - r; y++) if (y >= 0 && y < h) { s += t[y * w + x]; c++; }
+    for (let y = 0; y < h; y++) {
+      o[y * w + x] = s / c;
+      const a = y - r, b = y - r + k;
+      if (a >= 0 && a < h) { s -= t[a * w + x]; c--; }
+      if (b >= 0 && b < h) { s += t[b * w + x]; c++; }
+    }
+  }
+  P.cache.set(k, o);
+  return o;
+}
+/** 采样器：M=[a,b,c,d,tx,ty]，原图连续坐标 (u,v) → 截图连续坐标 (a·u+b·v+tx, c·u+d·v+ty)。ns×ns 个采样点，盒宽配合采样间距。 */
+function v3gSampler(P, M, ns, clip) {
+  const s = Math.sqrt(Math.abs(M[0] * M[3] - M[1] * M[2]));
+  const k = Math.max(1, Math.round(16 * s / ns));
+  const Y = v3gBox(P, k), w = P.w, h = P.h, sh = k % 2 ? 0 : 0.5;
+  const st = 16 / ns, o0 = st / 2;
+  const [a, b, c, d, tx, ty] = M, pg = M[6] || 0, ph = M[7] || 0, proj = pg !== 0 || ph !== 0;
+  const xlo = clip ? clip[0] : 0, ylo = clip ? clip[1] : 0, xhi = clip ? clip[0] + clip[2] : w, yhi = clip ? clip[1] + clip[3] : h;
+  return (i, j, rng) => {
+    let sum = 0, lo = Infinity, hi = -Infinity;
+    for (let m = 0; m < ns; m++) {
+      const v = j * 16 + o0 + m * st;
+      for (let q = 0; q < ns; q++) {
+        const u = i * 16 + o0 + q * st;
+        let X = a * u + b * v + tx, Yc = c * u + d * v + ty;
+        if (proj) { const z = 1 + pg * u + ph * v; X = (X - tx) / z + tx; Yc = (Yc - ty) / z + ty; }
+        if (X < xlo || Yc < ylo || X > xhi || Yc > yhi) return NaN;
+        const px = X - 0.5 + sh, py = Yc - 0.5 + sh;
+        if (px < 0 || py < 0 || px >= w - 1 || py >= h - 1) return NaN;
+        const x0 = px | 0, y0 = py | 0, fx = px - x0, fy = py - y0, p = y0 * w + x0;
+        const val = (Y[p] * (1 - fx) + Y[p + 1] * fx) * (1 - fy) + (Y[p + w] * (1 - fx) + Y[p + w + 1] * fx) * fy;
+        sum += val;
+        if (rng) { if (val < lo) lo = val; if (val > hi) hi = val; }
+      }
+    }
+    if (rng) rng[0] = hi - lo;
+    return sum / (ns * ns);
+  };
+}
+function v3gNs(M) { const s = Math.sqrt(Math.abs(M[0] * M[3] - M[1] * M[2])); return s >= 0.75 ? 4 : 8; }
+/** 对齐分数：块均值除以 step 的余数离 {0.25, 0.75} 的平均距离，随机约 0.125，越小越齐 */
+function v3gScore(P, M, cells, step, clip) {
+  const f = v3gSampler(P, M, v3gNs(M), clip);
+  let acc = 0, cnt = 0, seen = 0;
+  const rng = [0];
+  for (let q = 0; q < cells.length; q += 2) {
+    const mv = f(cells[q], cells[q + 1], rng);
+    if (mv !== mv) continue;
+    seen++;
+    // 纯色格（补边、边框、过曝）不管怎么对齐余数都一样，不参与打分
+    if (rng[0] < 0.5) continue;
+    let r = mv % step; if (r < 0) r += step;
+    const n = r / step;
+    acc += Math.min(Math.abs(n - 0.25), Math.abs(n - 0.75));
+    cnt++;
+  }
+  return cnt < Math.min(40, cells.length >> 2) || cnt < seen * 0.25 ? 1 : acc / cnt;
+}
+/** 原图坐标里以 (0,0) 为中心的 K×K 个格 */
+function v3gWindow(K) { const c = []; const h = K >> 1; for (let j = -h; j < K - h; j++) for (let i = -h; i < K - h; i++) c.push(i, j); return c; }
+/** 给线性部分 L=[a,b,c,d]，在一个周期内扫相位：原图 (pu,pv) 落到截图点 (cx,cy) */
+function v3gPhaseScan(P, L, cx, cy, cells, step, clip, ps) {
+  let best = null;
+  for (let pv = 0; pv < 16; pv += ps) for (let pu = 0; pu < 16; pu += ps) {
+    const M = [L[0], L[1], L[2], L[3], cx - (L[0] * pu + L[1] * pv), cy - (L[2] * pu + L[3] * pv)];
+    const s = v3gScore(P, M, cells, step, clip);
+    if (!best || s < best.s) best = { s, M };
+  }
+  return best;
+}
+/** 坐标下降精修 6 个仿射参数。步长按“原图像素位移”计：平移 δ·s，线性项 δ·s/R。 */
+function v3gRefine(P, M, cells, step, clip, R, steps, proj) {
+  let s = v3gScore(P, M, cells, step, clip);
+  const sc = Math.sqrt(Math.abs(M[0] * M[3] - M[1] * M[2]));
+  const np = proj ? 8 : 6;
+  if (proj && M.length < 8) M = [...M, 0, 0];
+  for (const st of steps) {
+    const dl = st * sc / R, dt = st * sc, dp = st / (R * R);
+    for (let pass = 0; pass < 6; pass++) {
+      let moved = false;
+      for (let k = 0; k < np; k++) {
+        const d = k < 4 ? dl : k < 6 ? dt : dp;
+        for (const sg of [1, -1]) {
+          const T = M.slice(); T[k] += sg * d;
+          // 线性项绕窗口中心改：平移补偿，免得中心跑掉
+          const ts = v3gScore(P, T, cells, step, clip);
+          if (ts < s) { s = ts; M = T; moved = true; break; }
+        }
+      }
+      if (!moved) break;
+    }
+  }
+  return { M, s };
+}
+/** 所有完整落在截图（或 clip 矩形）里的格，返回 {i,j,v} 和包围盒 */
+function v3gCells(P, M, step, clip) {
+  const f = v3gSampler(P, M, 8, clip);
+  // 截图四角反算回原图坐标，得到格号范围
+  const [a, b, c, d, tx, ty] = M, det = a * d - b * c;
+  const X0 = clip ? clip[0] : 0, Y0 = clip ? clip[1] : 0, X1 = clip ? clip[0] + clip[2] : P.w, Y1 = clip ? clip[1] + clip[3] : P.h;
+  let ilo = Infinity, ihi = -Infinity, jlo = Infinity, jhi = -Infinity;
+  for (const [X, Yc] of [[X0, Y0], [X1, Y0], [X0, Y1], [X1, Y1]]) {
+    const dx = X - tx, dy = Yc - ty;
+    const u = (d * dx - b * dy) / det, v = (-c * dx + a * dy) / det;
+    ilo = Math.min(ilo, Math.floor(u / 16)); ihi = Math.max(ihi, Math.floor(u / 16));
+    jlo = Math.min(jlo, Math.floor(v / 16)); jhi = Math.max(jhi, Math.floor(v / 16));
+  }
+  if (M[6] || M[7]) { ilo -= 4; ihi += 4; jlo -= 4; jhi += 4; }
+  const I = [], J = [], V = [], rng = [0];
+  let ai0 = Infinity, ai1 = -Infinity, aj0 = Infinity, aj1 = -Infinity;
+  let imin = Infinity, imax = -Infinity, jmin = Infinity, jmax = -Infinity;
+  // 包围盒只算有起伏的格：旋转补的白角、截屏边框、灰边这类纯色格不算进原图范围（但仍参与投票）
+  for (let j = jlo; j <= jhi; j++) for (let i = ilo; i <= ihi; i++) {
+    const mv = f(i, j, rng);
+    if (mv !== mv) continue;
+    I.push(i); J.push(j); V.push(mv);
+    if (i < ai0) ai0 = i; if (i > ai1) ai1 = i; if (j < aj0) aj0 = j; if (j > aj1) aj1 = j;
+    if (rng[0] < 0.75) continue;
+    if (i < imin) imin = i; if (i > imax) imax = i; if (j < jmin) jmin = j; if (j > jmax) jmax = j;
+  }
+  return { I: Int32Array.from(I), J: Int32Array.from(J), V: Float64Array.from(V), imin, imax, jmin, jmax, all: [ai0, ai1, aj0, aj1] };
+}
+const v3gInvCache = new Map();
+function v3gInv(n, password) {
+  const key = n + ":" + password;
+  let inv = v3gInvCache.get(key);
+  if (inv) return inv;
+  const order = Array.from({ length: n }, (_, i) => i);
+  shuffleInPlace(order, password >>> 0);
+  inv = new Int32Array(n);
+  for (let k = 0; k < n; k++) inv[order[k]] = k;
+  if (v3gInvCache.size > 4000) v3gInvCache.clear();
+  v3gInvCache.set(key, inv);
+  return inv;
+}
+/** 软判决：余数 0.75 → +1（比特 1），0.25 → −1（比特 0），0 / 0.5 处为 0 */
+function v3gSoft(V, step) {
+  const out = new Float64Array(V.length);
+  for (let q = 0; q < V.length; q++) {
+    let r = V[q] % step; if (r < 0) r += step;
+    out[q] = Math.sin(2 * Math.PI * (r / step - 0.5));
+  }
+  return out;
+}
+/** 已知格→块号的对应（块数 bw×bh，格 (i,j) 是块 (i−i0, j−j0)），按 nbits 累加投票 */
+function v3gAccumulate(C, soft, bw, bh, i0, j0, inv, nbits, acc) {
+  acc.fill(0);
+  let tot = 0;
+  const I = C.I, J = C.J;
+  for (let q = 0; q < I.length; q++) {
+    const bx = I[q] - i0, by = J[q] - j0;
+    if (bx < 0 || by < 0 || bx >= bw || by >= bh) continue;
+    const k = inv[by * bw + bx];
+    acc[k % nbits] += soft[q];
+    tot += Math.abs(soft[q]);
+  }
+  return tot;
+}
+function v3gTryDecode(acc, nbits, password, parity) {
+  const got = new Uint8Array(nbits);
+  for (let i = 0; i < nbits; i++) got[i] = acc[i] >= 0 ? 1 : 0;
+  const idx = Array.from({ length: nbits }, (_, i) => i);
+  shuffleInPlace(idx, (password + 0x9e3779b9) >>> 0);
+  const un = new Uint8Array(nbits);
+  for (let i = 0; i < nbits; i++) un[idx[i]] = got[i];
+  return v3Parse(bitsToBytes(un), parity);
+}
+/** 找块号偏移和原图块数。按先验排序：先居中等比裁切，再单边裁切，最后小范围穷举。 */
+function v3gIndex(C, soft, opt, budget) {
+  const { password, parity } = opt;
+  const vw = C.imax - C.imin + 1, vh = C.jmax - C.jmin + 1;
+  if (vw > 256 || vh > 256) return null;
+  const frames = FRAME_SIZES.map((N) => (N + 6 + parity) * 8);
+  const accs = frames.map((nb) => new Float64Array(nb));
+  const seen = new Set();
+  let evals = 0, best = null;
+  const tryOne = (bw, bh, i0, j0) => {
+    if (bw < 4 || bh < 4) return null;
+    const key = bw + "," + bh + "," + i0 + "," + j0;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const n = bw * bh;
+    const inv = v3gInv(n, password);
+    for (let f = 0; f < frames.length; f++) {
+      const nb = frames[f];
+      if (nb >= n) continue;
+      evals += C.I.length;
+      const acc = accs[f];
+      const tot = v3gAccumulate(C, soft, bw, bh, i0, j0, inv, nb, acc);
+      if (tot <= 0) continue;
+      let ag = 0; for (let i = 0; i < nb; i++) ag += Math.abs(acc[i]);
+      // 随机对应时 ag/tot ≈ sqrt(2/(π·每比特票数))；对上时明显更高
+      const m = tot / nb, base = m >= 1 ? Math.sqrt(2 / (Math.PI * m)) : 1;
+      const z = ag / tot / base;
+      if (!best || z > best.z) best = { z, bw, bh, i0, j0, f };
+      if (z > 1.12) {
+        const t = v3gTryDecode(acc, nb, password, parity);
+        if (t !== null) return { text: t, bw, bh, i0, j0, z };
+      }
+    }
+    return null;
+  };
+  const maxdx = Math.round(vw * 0.7), maxdy = Math.round(vh * 0.7);
+  // 已知原尺寸：块数固定，只找偏移
+  if (opt.known) {
+    const bw = Math.floor(opt.known[0] / 16), bh = Math.floor(opt.known[1] / 16);
+    const xs = [], ys = [];
+    for (let i0 = C.imin + 1; i0 >= C.imax - bw; i0--) xs.push(i0);
+    for (let j0 = C.jmin + 1; j0 >= C.jmax - bh; j0--) ys.push(j0);
+    // 先试居中
+    const mid = (a, lo, hi) => a.sort((p, q) => Math.abs(p - (lo + hi) / 2) - Math.abs(q - (lo + hi) / 2));
+    mid(xs, C.imax - bw, C.imin); mid(ys, C.jmax - bh, C.jmin);
+    for (const i0 of xs) for (const j0 of ys) { const r = tryOne(bw, bh, i0, j0); if (r) return r; if (evals > budget) return null; }
+    if (bw <= vw + 1 && bh <= vh + 1) for (let i0 = C.imin - 2; i0 <= C.imin + 2; i0++) for (let j0 = C.jmin - 2; j0 <= C.jmin + 2; j0++) { const r = tryOne(bw, bh, i0, j0); if (r) return r; }
+    return null;
+  }
+  // 0) 截屏边框里的图：整块可见区域就是原图（含纯色边距）
+  if (C.all && opt.clipped) {
+    const [a0, a1, b0, b1] = C.all;
+    for (let dw = 0; dw <= 2; dw++) for (let dh = 0; dh <= 2; dh++) for (const ox of [0, -1, 1]) for (const oy of [0, -1, 1]) {
+      const r = tryOne(a1 - a0 + 1 + (dw === 2 ? -1 : dw), b1 - b0 + 1 + (dh === 2 ? -1 : dh), a0 + ox, b0 + oy);
+      if (r) return r;
+    }
+  }
+  // 1) 居中、等比：原图 = 可见区域四边各多出一些
+  for (let dx = -2; dx <= maxdx; dx++) {
+    const bw = vw + dx, bhc = Math.round(bw * vh / vw);
+    if (evals > budget) return null;
+    for (let bh = bhc - 1; bh <= bhc + 1; bh++) {
+      const dy = bh - vh; if (dy < -2) continue;
+      for (const ox of [0, -1, 1]) for (const oy of [0, -1, 1]) {
+        const r = tryOne(bw, bh, C.imin - Math.floor(dx / 2) + ox, C.jmin - Math.floor(dy / 2) + oy);
+        if (r) return r;
+      }
+    }
+    if (evals > budget) return null;
+  }
+  // 2) 任意宽高，偏移取居中 / 贴左上 / 贴右下
+  for (let s = 0; s <= maxdx + maxdy; s++) {
+    for (let dx = Math.max(-1, s - maxdy); dx <= Math.min(maxdx, s + 1); dx++) {
+      const dy = s - dx; if (dy < -1 || dy > maxdy) continue;
+      const bw = vw + dx, bh = vh + dy;
+      const xs = [C.imin - Math.floor(dx / 2), C.imin, C.imin - dx], ys = [C.jmin - Math.floor(dy / 2), C.jmin, C.jmin - dy];
+      for (const i0 of xs) for (const j0 of ys) { const r = tryOne(bw, bh, i0, j0); if (r) return r; }
+      if (evals > budget) return null;
+    }
+    if (evals > budget) return null;
+  }
+  // 3) 小范围穷举
+  for (let dx = 0; dx <= 10; dx++) for (let dy = 0; dy <= 10; dy++) {
+    for (let a = 0; a <= dx; a++) for (let b = 0; b <= dy; b++) {
+      const r = tryOne(vw + dx, vh + dy, C.imin - a, C.jmin - b); if (r) return r;
+    }
+    if (evals > budget) return null;
+  }
+  return null;
+}
+/** 可见区域内（原图坐标、以中心为原点）均匀抽一些格用于精修打分 */
+function v3gSpread(P, M, clip, maxCells) {
+  const [a, b, c, d, tx, ty] = M, det = a * d - b * c;
+  const X0 = clip ? clip[0] : 0, Y0 = clip ? clip[1] : 0, X1 = clip ? clip[0] + clip[2] : P.w, Y1 = clip ? clip[1] + clip[3] : P.h;
+  let ilo = Infinity, ihi = -Infinity, jlo = Infinity, jhi = -Infinity;
+  for (const [X, Yc] of [[X0, Y0], [X1, Y0], [X0, Y1], [X1, Y1]]) {
+    const dx = X - tx, dy = Yc - ty;
+    const u = (d * dx - b * dy) / det, v = (-c * dx + a * dy) / det;
+    ilo = Math.min(ilo, Math.floor(u / 16)); ihi = Math.max(ihi, Math.floor(u / 16));
+    jlo = Math.min(jlo, Math.floor(v / 16)); jhi = Math.max(jhi, Math.floor(v / 16));
+  }
+  const nx = ihi - ilo + 1, ny = jhi - jlo + 1;
+  const str = Math.max(1, Math.ceil(Math.sqrt(nx * ny / maxCells)));
+  const out = [];
+  for (let j = jlo; j <= jhi; j += str) for (let i = ilo + ((j - jlo) / str % 2 ? str >> 1 : 0); i <= ihi; i += str) out.push(i, j);
+  return { cells: out, R: Math.max(16, 8 * Math.min(nx, ny)) };
+}
+const imaxOk = (C) => C.imax >= C.imin + 3 && C.jmax >= C.jmin + 3;
+function v3gSearch(img, opt) {
+  const { rgba, w, h } = img;
+  const { password, step, parity } = opt;
+  const P = opt.prep || v3gPrep(rgba, w, h, opt.lut);
+  const clip = opt.clip || null;
+  const cx = clip ? clip[0] + clip[2] / 2 : w / 2, cy = clip ? clip[1] + clip[3] / 2 : h / 2;
+  const t0 = Date.now(), log = opt.log || null;
+  const hyps = [];
+  const vwPx = clip ? clip[2] : w, vhPx = clip ? clip[3] : h;
+  // 原图不超过 4096 像素、不小于 64 像素
+  const sMin = Math.max(0.12, Math.max(vwPx, vhPx) / 4096), sMax = Math.min(4, Math.min(vwPx, vhPx) / 64);
+  for (let s = sMin; s <= sMax; s *= 1.02) hyps.push({ L: [s, 0, 0, s], s, th: 0 });
+  if (!opt.noRot) for (let th = -45; th <= 45.01; th += 1.5) {
+    if (Math.abs(th) < 0.1) continue;
+    const r = th * Math.PI / 180;
+    hyps.push({ L: [Math.cos(r), -Math.sin(r), Math.sin(r), Math.cos(r)], s: 1, th });
+  }
+  const win = v3gWindow(12);
+  for (const hp of hyps) { const r = v3gPhaseScan(P, hp.L, cx, cy, win, step, clip, 2); hp.score = r.s; hp.M = r.M; }
+  if (opt.aniso) {
+    // 不等比缩放：假定左上角没被裁（截屏边框里的图、整图拉伸），左上角 12×12 格只扫两个缩放
+    const ax = clip ? clip[0] : 0, ay = clip ? clip[1] : 0, corner = [];
+    for (let j = 0; j < 12; j++) for (let i = 0; i < 12; i++) corner.push(i, j);
+    for (let sx = sMin; sx <= sMax; sx *= 1.02) for (let r = 0.5; r <= 2.0001; r *= 1.02) {
+      if (Math.abs(Math.log(r)) < 0.015) continue;
+      const sy = sx * r; if (sy < sMin * 0.5 || sy > sMax * 2) continue;
+      const M = [sx, 0, 0, sy, ax, ay];
+      const sc = v3gScore(P, M, corner, step, clip);
+      // 平移挪到中心，方便后面绕中心精修
+      const u0 = Math.round((cx - ax) / sx / 16) * 16, v0 = Math.round((cy - ay) / sy / 16) * 16;
+      hyps.push({ L: [sx, 0, 0, sy], s: Math.sqrt(sx * sy), th: 0, r, score: sc, M: [sx, 0, 0, sy, ax + sx * u0, ay + sy * v0] });
+    }
+  }
+  hyps.sort((p, q) => p.score - q.score);
+  if (log) log("coarse", Date.now() - t0, hyps.slice(0, 8).map((p) => `${p.s.toFixed(3)}/${p.th}:${p.score.toFixed(3)}`).join(" "));
+  if (log) log("coarse rot", hyps.filter((p) => p.th).slice(0, 4).map((p) => `${p.th}:${p.score.toFixed(3)}`).join(" "), "uni", hyps.filter((p) => !p.th && !p.r).slice(0, 4).map((p) => `${p.s.toFixed(3)}:${p.score.toFixed(3)}`).join(" "));
+  // 三类假设（等比缩放、旋转、不等比）用的窗口不同，分数不完全可比：每类各留几个
+  const picks = [];
+  const quota = { u: 3, t: 2, r: 2 };
+  for (const hp of hyps) {
+    if (picks.length >= (opt.maxPicks || 6)) break;
+    if (hp.score > 0.105) break;
+    const fam = hp.r ? "r" : hp.th ? "t" : "u";
+    if (quota[fam] <= 0) continue;
+    if (picks.some((p) => Math.abs(Math.log(p.s / hp.s)) < 0.03 && Math.abs(p.th - hp.th) < 2 && Math.abs(Math.log((p.r || 1) / (hp.r || 1))) < 0.03)) continue;
+    quota[fam]--;
+    picks.push(hp);
+  }
+  const refined = [];
+  for (const hp of picks) {
+    let r = v3gRefine(P, hp.M, win, step, clip, 96, [1, 0.5]);
+    r = v3gRefine(P, r.M, v3gWindow(24), step, clip, 192, [0.5, 0.25]);
+    const sp = v3gSpread(P, r.M, clip, 700);
+    r = v3gRefine(P, r.M, sp.cells, step, clip, sp.R, [0.25, 0.125, 0.0625]);
+    if (log) log("refined", Date.now() - t0, hp.s.toFixed(3), hp.th, r.s.toFixed(4), r.M.map((v) => v.toFixed(4)).join(","));
+    r.hp = hp;
+    if (r.s <= 0.1) refined.push(r);
+  }
+  refined.sort((p, q) => p.s - q.s);
+  for (const r of refined) {
+    const attempt = (M) => {
+      const C = v3gCells(P, M, step, clip);
+      const soft = v3gSoft(C.V, step);
+      const ix = imaxOk(C) ? v3gIndex(C, soft, { ...opt, clipped: !!clip }, opt.budget || 4e7) : null;
+      if (log) log("index", Date.now() - t0, ix ? JSON.stringify(ix) : "none", C.imax - C.imin + 1, C.jmax - C.jmin + 1);
+      return ix ? { text: ix.text, M, ix, s: r.s, vis: [C.imax - C.imin + 1, C.jmax - C.jmin + 1] } : null;
+    };
+    const got = attempt(r.M);
+    if (got) return got;
+    // 透视：中间对齐了、四周没对齐时，加两个透视参数再精修一次
+    if (r === refined[0] && !opt.noProj) {
+      let rp = v3gRefine(P, r.hp.M, win, step, clip, 96, [1, 0.5]);
+      for (const K of [20, 32, 48]) rp = v3gRefine(P, rp.M, v3gWindow(K), step, clip, 8 * K, [0.5, 0.25], true);
+      const sp = v3gSpread(P, rp.M, clip, 900);
+      rp = v3gRefine(P, rp.M, sp.cells, step, clip, sp.R, [0.25, 0.125, 0.0625], true);
+      if (log) log("proj", Date.now() - t0, rp.s.toFixed(4), rp.M.map((v) => v.toExponential(3)).join(","));
+      if (rp.s < r.s - 0.004) { const g2 = attempt(rp.M); if (g2) return g2; }
+    }
+  }
+  return null;
+}
+function v3gNote(g, clip, known) {
+  const [a, b, c, d] = g.M;
+  const sx = Math.hypot(a, c), sy = Math.hypot(b, d), th = Math.atan2(c, a) * 180 / Math.PI;
+  const parts = [];
+  if (clip) parts.push(`只看纯色边框里的图片区域（${clip[2]}×${clip[3]}，位置 ${clip[0]},${clip[1]}）`);
+  if (Math.abs(th) >= 0.5) parts.push(`按约 ${Math.abs(Math.round(th))}° 旋转`);
+  if (Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01) parts.push(Math.abs(sx / sy - 1) > 0.02 ? `按横向 ${Math.round(sx * 100)}%、纵向 ${Math.round(sy * 100)}% 缩放` : `按约 ${Math.round(sx * 100)}% 缩放`);
+  const [vw, vh] = g.vis || [g.ix.bw, g.ix.bh];
+  if (g.ix.bw > vw + 1 || g.ix.bh > vh + 1) parts.push(`只剩原图约 ${Math.round(100 * Math.min(1, vw / g.ix.bw) * Math.min(1, vh / g.ix.bh))}% 的面积`);
+  parts.push(`原图约 ${g.ix.bw * 16}×${g.ix.bh * 16}${known ? "" : "（按 16 像素取整）"}`);
+  return "网格对齐还原：" + parts.join("，");
+}
+/* ===== v3 调色找回：亮度、对比度、伽马、反色、色相等逐像素调色会打乱块均值的格点，
+   在原尺寸几何下搜一条反向曲线，让块均值重新落回格点再解码 ===== */
+function v3ToneSamples(rgba, w, h, maxBlocks) {
+  const B = V3_BLOCK, bw = Math.floor(w / B), bh = Math.floor(h / B);
+  const ok = [];
+  for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) {
+    let sat = 0;
+    for (let y = 1; y < B; y += 2) for (let x = 1; x < B; x += 2) {
+      const i = ((by * B + y) * w + bx * B + x) * 4;
+      const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      if (r >= 254 || g >= 254 || b >= 254 || r <= 1 || g <= 1 || b <= 1) sat++;
+    }
+    if (sat <= 3) ok.push(by * bw + bx);
+  }
+  const stride = Math.max(1, ok.length / maxBlocks);
+  const pick = [];
+  for (let f = 0; f < ok.length && pick.length < maxBlocks; f += stride) pick.push(ok[Math.floor(f)]);
+  const n = pick.length, R = new Uint8Array(n * 64), G = new Uint8Array(n * 64), Bc = new Uint8Array(n * 64);
+  for (let q = 0; q < n; q++) {
+    const bx = pick[q] % bw, by = Math.floor(pick[q] / bw);
+    let t = q * 64;
+    for (let y = 1; y < B; y += 2) for (let x = 1; x < B; x += 2, t++) {
+      const i = ((by * B + y) * w + bx * B + x) * 4;
+      R[t] = rgba[i]; G[t] = rgba[i + 1]; Bc[t] = rgba[i + 2];
+    }
+  }
+  return { n, R, G, B: Bc };
+}
+/** 格点集中度：块均值 m 落在 (k+0.25)·step 或 (k+0.75)·step 上时，相位 4π·m/step 都一样。
+ * 返回合成向量长度 R（0~1，越大越齐）和让它对准格点所需的整体平移 b。 */
+function v3Concentration(means, step) {
+  let c = 0, s = 0, n = 0;
+  const k = 4 * Math.PI / step;
+  for (const m of means) { if (m !== m) continue; c += Math.cos(k * m); s += Math.sin(k * m); n++; }
+  if (n < 40) return { R: 0, b: 0 };
+  const R = Math.hypot(c, s) / n, ph = Math.atan2(s, c);
+  // 目标相位：m = 0.25·step → 4π·0.25 = π
+  let b = (Math.PI - ph) / k;
+  b = ((b % (step / 2)) + step / 2) % (step / 2);
+  return { R, b };
+}
+function v3ToneScore(S, lut, step) {
+  const means = new Float64Array(S.n);
+  for (let q = 0, t = 0; q < S.n; q++) {
+    let s = 0;
+    for (let k = 0; k < 64; k++, t++) s += 0.299 * lut[S.R[t]] + 0.587 * lut[S.G[t]] + 0.114 * lut[S.B[t]];
+    means[q] = s / 64;
+  }
+  return v3Concentration(means, step);
+}
+/** 反向曲线：先伽马再仿射，v = A·255·(x/255)^g + b */
+function v3ToneLut(p) {
+  const lut = new Float64Array(256);
+  for (let x = 0; x < 256; x++) lut[x] = p.A * 255 * Math.pow(x / 255, p.g) + p.b;
+  return lut;
+}
+/** 色相旋转：在 HSV 里转回去（V、S 不变），返回按像素算的亮度 */
+function v3HueLuma(r, g, b, deg) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d === 0) return mx;
+  let hh;
+  if (mx === r) hh = ((g - b) / d) % 6; else if (mx === g) hh = (b - r) / d + 2; else hh = (r - g) / d + 4;
+  hh = hh * 60 + deg; hh = ((hh % 360) + 360) % 360;
+  const c = d, x = c * (1 - Math.abs((hh / 60) % 2 - 1)), m = mn;
+  let R, G, Bb;
+  if (hh < 60) [R, G, Bb] = [c, x, 0]; else if (hh < 120) [R, G, Bb] = [x, c, 0]; else if (hh < 180) [R, G, Bb] = [0, c, x];
+  else if (hh < 240) [R, G, Bb] = [0, x, c]; else if (hh < 300) [R, G, Bb] = [x, 0, c]; else [R, G, Bb] = [c, 0, x];
+  return 0.299 * (R + m) + 0.587 * (G + m) + 0.114 * (Bb + m);
+}
+function v3HueScore(S, deg, step) {
+  const means = new Float64Array(S.n);
+  for (let q = 0, t = 0; q < S.n; q++) {
+    let s = 0;
+    for (let k = 0; k < 64; k++, t++) s += v3HueLuma(S.R[t], S.G[t], S.B[t], deg);
+    means[q] = s / 64;
+  }
+  return v3Concentration(means, step);
+}
+/** 原尺寸下按给定的逐像素亮度函数算块均值并解码；饱和像素多的块不投票 */
+function v3ToneDecode(rgba, w, h, lumFn, password, step, parity) {
+  for (const lim of [2, 24]) { const t = v3ToneDecodeLim(rgba, w, h, lumFn, password, step, parity, lim); if (t !== null) return t; }
+  return null;
+}
+function v3ToneDecodeLim(rgba, w, h, lumFn, password, step, parity, lim) {
+  const B = V3_BLOCK, bw = Math.floor(w / B), bh = Math.floor(h / B), n = bw * bh;
+  const m = new Float64Array(n);
+  for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) {
+    let s = 0, c = 0, sat = 0;
+    for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) {
+      const i = ((by * B + y) * w + bx * B + x) * 4;
+      const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      if (r >= 254 || g >= 254 || b >= 254 || r <= 1 || g <= 1 || b <= 1) { sat++; continue; }
+      s += lumFn(r, g, b); c++;
+    }
+    m[by * bw + bx] = sat > lim || c === 0 ? NaN : s / c;
+  }
+  for (const N of FRAME_SIZES) {
+    const nbits = (N + 6 + parity) * 8;
+    if (nbits >= n) continue;
+    const bits = decodeV3Means(m, n, password, nbits, step, 1);
+    const text = v3Parse(bitsToBytes(bits), parity);
+    if (text !== null) return text;
+  }
+  return null;
+}
+function v3ToneSearch(img, opt, log) {
+  const { rgba, w, h } = img;
+  const { password, step, parity } = opt;
+  const S = v3ToneSamples(rgba, w, h, 400);
+  if (S.n < 60) return null;
+  const t0 = Date.now();
+  const half = step / 2;
+  const cands = [];
+  // 一维扫：仿射斜率 A（亮度、对比度、反色），伽马 g；平移 b 由集中度直接算出
+  for (let la = -1.1; la <= 1.1001; la += 0.004) { const p = { A: Math.exp(la), g: 1 }; const r = v3ToneScore(S, v3ToneLut({ ...p, b: 0 }), step); cands.push({ p: { ...p, b: r.b }, R: r.R }); }
+  for (let lg = -1.1; lg <= 1.1001; lg += 0.004) { if (Math.abs(lg) < 0.002) continue; const p = { A: 1, g: Math.exp(lg) }; const r = v3ToneScore(S, v3ToneLut({ ...p, b: 0 }), step); cands.push({ p: { ...p, b: r.b }, R: r.R }); }
+  cands.sort((p, q) => q.R - p.R);
+  if (log) log("tone coarse", Date.now() - t0, cands.slice(0, 5).map((c) => `${c.p.A.toFixed(3)},${c.p.g.toFixed(3)},${c.p.b.toFixed(2)}:${c.R.toFixed(3)}`).join(" "));
+  const picks = [];
+  for (const c of cands) {
+    if (picks.length >= (opt.tonePicks || 6)) break;
+    if (picks.some((q) => Math.abs(Math.log(q.p.A / c.p.A)) < 0.02 && Math.abs(Math.log(q.p.g / c.p.g)) < 0.02)) continue;
+    picks.push(c);
+  }
+  const S2 = v3ToneSamples(rgba, w, h, 1200);
+  for (const c of picks) {
+    // 二维精修 (A, g)
+    let p = { ...c.p }, best = v3ToneScore(S2, v3ToneLut({ ...p, b: 0 }), step);
+    for (const st of [0.004, 0.0015, 0.0005]) {
+      for (let pass = 0; pass < 6; pass++) {
+        let moved = false;
+        for (const key of ["A", "g"]) for (const sg of [1, -1]) {
+          const q = { ...p }; q[key] *= Math.exp(sg * st);
+          const r = v3ToneScore(S2, v3ToneLut({ ...q, b: 0 }), step);
+          if (r.R > best.R) { best = r; p = q; moved = true; }
+        }
+        if (!moved) break;
+      }
+    }
+    p.b = best.b;
+    if (log) log("tone refined", Date.now() - t0, p.A.toFixed(4), p.g.toFixed(4), p.b.toFixed(3), best.R.toFixed(4));
+    if (best.R < 0.15) continue;
+    for (const db of [0, half]) {
+      const lut = v3ToneLut({ ...p, b: p.b + db });
+      const t = v3ToneDecode(rgba, w, h, (r, g, b) => 0.299 * lut[r] + 0.587 * lut[g] + 0.114 * lut[b], password, step, parity);
+      if (t !== null) return { text: t, note: "已按调色（亮度 / 对比度 / 伽马 / 反色）反推还原" };
+    }
+  }
+  // 色相旋转
+  let hb = null;
+  for (let deg = 4; deg < 360; deg += 4) { const r = v3HueScore(S, deg, step); if (!hb || r.R > hb.R) hb = { ...r, deg }; }
+  if (hb) {
+    let best = hb;
+    for (let deg = hb.deg - 3; deg <= hb.deg + 3; deg += 0.5) { const r = v3HueScore(S2, deg, step); if (best === hb || r.R > best.R) best = { ...r, deg }; }
+    if (log) log("hue", Date.now() - t0, best.deg, best.R.toFixed(4));
+    if (best.R >= 0.15) for (const db of [0, half]) {
+      const t = v3ToneDecode(rgba, w, h, (r, g, b) => v3HueLuma(r, g, b, best.deg) + best.b + db, password, step, parity);
+      if (t !== null) return { text: t, note: `已按色相偏移约 ${Math.round(((360 - best.deg) % 360))}° 反推还原` };
+    }
+  }
+  return null;
+}
+/* @@V3G-END */
 /** 深度找回：截屏黑边、小角度、居中裁边、等比缩放。成功才返回文本。 */
 function searchV3(img, opt) {
   const { rgba, w, h } = img;
@@ -1900,8 +2463,17 @@ function searchV3(img, opt) {
       if (t !== null) return { text: t, note: (W !== w || H !== h) ? `已缩放到 ${W}×${H}` : "" };
     }
   }
-  // 手机截屏：上下（或四周）有纯色边框，图在中间被缩放。先找出内嵌矩形再扫原尺寸。
+  // 调色（亮度、对比度、伽马、反色、色相）：原尺寸下反推一条曲线
+  const tone = v3ToneSearch(img, { password, step, parity });
+  if (tone) return tone;
+  // 通用几何：裁切 + 缩放 + 旋转 + 拉伸，按周期网格对齐后再找块号偏移
   const rect = v3FindContentRect(rgba, w, h);
+  const prep = v3gPrep(rgba, w, h);
+  for (const clip of rect ? [rect, null] : [null]) {
+    const g = v3gSearch(img, { password, step, parity, known, prep, clip, aniso: true });
+    if (g) return { text: g.text, note: v3gNote(g, clip, known) };
+  }
+  // 手机截屏：上下（或四周）有纯色边框，图在中间被缩放。先找出内嵌矩形再扫原尺寸。
   if (rect) {
     const r = v3SearchRect(img, rect, { password, step, parity, known });
     if (r) return { text: r.text, note: `已裁掉截屏边框（图片区域 ${rect[2]}×${rect[3]}，位置 ${rect[0]},${rect[1]}）并缩放到${known ? "" : "约 "}${r.W}×${r.H}` };
