@@ -1695,7 +1695,8 @@ function searchV3(img, opt) {
     if (known) cands.push([baseW, baseH]);
     const imp = impliedWH(th);
     if (imp) cands.push(imp);
-    if (!cands.length) cands.push([w, h]);
+    // 同画布旋转（转完按原框裁掉四角）：原尺寸就是当前尺寸
+    if (!known) cands.push([w, h]);
     for (const [W0, H0] of cands) {
       const cx = (W0 - 1) / 2, cy = (H0 - 1) / 2, acx = (w - 1) / 2, acy = (h - 1) / 2;
       const rad = th * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
