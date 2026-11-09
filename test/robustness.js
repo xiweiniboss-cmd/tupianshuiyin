@@ -104,6 +104,8 @@ elif k=="cropsmall":
     c=im.crop((x0,y0,im.width-x0,im.height-y0)).resize((800,337), Image.Resampling.BICUBIC)
 elif k=="rot15":
     c=im.rotate(15, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255,255,255))
+elif k=="rot15same":
+    c=im.rotate(15, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=(255,255,255))
 elif k=="scale50":
     c=im.resize((max(2,im.width//2), max(2,im.height//2)), Image.Resampling.BICUBIC)
 elif k=="flip":
@@ -195,7 +197,7 @@ const j11s = closestJpeg(emS.rgba, W, H, 11 * 1024);
   record(`jpeg ~11KB q${j11s.q} (${Math.round(j11s.bytes / 1024)} KB) strong  psnr ${emS.psnr.toFixed(1)}`, !!(r && r.text === TEXT), `${Date.now() - t0}ms`);
 }
 
-for (const k of ["scale50", "shot", "flip", "rot90", "cropback", "cropsmall", "rot15"]) {
+for (const k of ["scale50", "shot", "flip", "rot90", "cropback", "cropsmall", "rot15", "rot15same"]) {
   const g = geom(em.rgba, W, H, k);
   check(g, `${k} ${g.w}×${g.h}`);
 }
@@ -208,6 +210,10 @@ for (const k of ["scale50", "shot", "flip", "rot90", "cropback", "cropsmall", "r
     fast: false, known: null, legacyLen: 0, deep: true,
   });
   record("rot15 without original size", !!(r && r.text === TEXT), `${Date.now() - t0}ms ${r && r.note ? r.note : ""}`.trim());
+}
+{
+  const g = geom(em.rgba, W, H, "shot");
+  check(g, "shot without original size", { known: null });
 }
 
 record("wrong key", extractV3(em.rgba, W, H, 99, standard.step, standard.parity) === null, "");
