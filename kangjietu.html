@@ -1396,6 +1396,22 @@ function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta) {
     }
     return { best };
 }
+/** 同步峰够强但解不出时：以同步强度为目标，对周期（横纵分开）和角度做逐步缩小的爬山搜索 */
+function l2Refine(R, w, h, seed, k, px, py, th, z0) {
+    let cur = { px, py, th, z: z0 };
+    let sp = 0.004, sa = 0.004;
+    for (let it = 0; it < 40 && sp > 0.00015; it++) {
+        let moved = false;
+        const steps = [[sp, 0, 0], [-sp, 0, 0], [0, sp, 0], [0, -sp, 0], [0, 0, sa], [0, 0, -sa], [sp, sp, 0], [-sp, -sp, 0]];
+        for (const [a, b, c] of steps) {
+            const q = l2TryAt(R, w, h, cur.px * (1 + a), cur.py * (1 + b), seed, [k], 4.5, cur.th + c);
+            if (q.hit) return q.hit;
+            if (q.best.z > cur.z) { cur = { px: cur.px * (1 + a), py: cur.py * (1 + b), th: cur.th + c, z: q.best.z }; moved = true; break; }
+        }
+        if (!moved) { sp /= 2; sa /= 2; }
+    }
+    return null;
+}
 /** 抗截图层提取：不依赖原尺寸、不依赖裁切位置 */
 function l2Extract(rgba, w, h, seed, onProgress) {
     const R = l2Residual(rgba, w, h);
@@ -1418,10 +1434,12 @@ function l2Extract(rgba, w, h, seed, onProgress) {
         const r = l2TryAt(R, w, h, p, p, seed, all, 5, th);
         if (r.hit) return r.hit;
         if (r.best.z >= 5) {
+            const q = l2Refine(R, w, h, seed, r.best.k, p, p, th, r.best.z);
+            if (q) return q;
             for (const ea of [-0.0025, 0, 0.0025]) for (const ep of [-0.003, 0, 0.003]) {
                 if (!ea && !ep) continue;
-                const q = l2TryAt(R, w, h, p * (1 + ep), p * (1 + ep), seed, [r.best.k], 4.5, th + ea);
-                if (q.hit) return q.hit;
+                const q2 = l2TryAt(R, w, h, p * (1 + ep), p * (1 + ep), seed, [r.best.k], 4.5, th + ea);
+                if (q2.hit) return q2.hit;
             }
         }
     }
@@ -1478,11 +1496,10 @@ function fileToImage(file){
         const maxEdge=1600;
         const longest=Math.max(img.width,img.height);
         const scale=longest>maxEdge?maxEdge/longest:1;
-        let w=Math.max(2, Math.round(img.width*scale));
-        let h=Math.max(2, Math.round(img.height*scale));
-        w-=w%2; h-=h%2;
+        const fw=Math.max(2, Math.round(img.width*scale)), fh=Math.max(2, Math.round(img.height*scale));
+        const w=fw-fw%2, h=fh-fh%2; // 奇数边裁掉 1 像素，不拉伸（拉伸会打乱水印网格）
         const c=document.createElement("canvas"); c.width=w; c.height=h;
-        const ctx=c.getContext("2d"); ctx.drawImage(img,0,0,w,h);
+        const ctx=c.getContext("2d"); ctx.drawImage(img,0,0,fw,fh);
         const data=ctx.getImageData(0,0,w,h);
         if(scale<1) toast("已缩小图片，以免手机浏览器内存不足");
         resolve({rgba:data.data,width:w,height:h,buffer:buf,url:c.toDataURL("image/png"),name:file.name});
