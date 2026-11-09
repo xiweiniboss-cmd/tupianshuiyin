@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>隐印 · TrustMark 水印</title>
+<meta name="description" content="用 Adobe 开源的 TrustMark 模型写入抗压缩的图片水印，浏览器本地运算。"/>
+<meta name="theme-color" content="#F3EEE4"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#F3EEE4; --elev:#FAF7F1; --subtle:#EBE4D6; --fg:#1A1714;
+  --muted:#7A7268; --subtle-fg:#A39B90; --accent:#B43A32; --accent-fg:#F3EEE4;
+  --border:#D9D1C4; --ring:#B43A32;
+  --sans:"Noto Sans SC","Segoe UI",system-ui,sans-serif;
+  --display:"Noto Serif SC","Songti SC",serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --shadow:0 0 0 1px rgba(26,23,20,.06),0 1px 2px -1px rgba(26,23,20,.06),0 2px 4px 0 rgba(26,23,20,.04);
+}
+* { box-sizing:border-box; }
+html,body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+body {
+  min-height:100dvh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(180,58,50,.06), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(26,23,20,.04), transparent 45%);
+}
+button { font-family:inherit; cursor:pointer; }
+button:disabled { cursor:not-allowed; opacity:.4; }
+input, textarea { font-family:inherit; }
+h1 { font-family:var(--display); font-weight:500; letter-spacing:-.03em; text-wrap:balance; }
+.wrap { max-width:960px; margin:0 auto; padding:0 20px; }
+header { border-bottom:1px solid color-mix(in oklab, var(--border) 80%, transparent); }
+.nav { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; }
+.brand { display:flex; align-items:center; gap:12px; }
+.brand h2 { font-family:var(--display); font-size:20px; margin:0; font-weight:500; }
+.brand p { margin:0; font-size:12px; color:var(--muted); }
+.hero { padding:40px 0 24px; max-width:640px; }
+.hero h1 { font-size:clamp(28px,5vw,40px); margin:0; line-height:1.15; }
+.hero h1 span { color:var(--accent); }
+.hero p { color:var(--muted); line-height:1.6; margin:12px 0 0; }
+.pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.pill { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+.pill.on { background:rgba(180,58,50,.12); color:var(--accent); border-color:transparent; }
+.tabs { display:flex; gap:4px; background:var(--subtle); padding:4px; border-radius:16px; max-width:420px; }
+.tabs button { flex:1; height:36px; border:0; background:transparent; border-radius:12px; color:var(--muted); font-size:14px; font-weight:500; }
+.tabs button.active { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
+.grid { display:grid; gap:32px; margin-top:28px; }
+@media (min-width:860px){ .grid { grid-template-columns:1.1fr .9fr; } }
+.drop {
+  min-height:220px; border-radius:16px; background:var(--elev); box-shadow:var(--shadow);
+  display:flex; align-items:center; justify-content:center; text-align:center; position:relative; overflow:hidden;
+}
+.drop img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:
+  repeating-conic-gradient(#e7e0d4 0 8px,#f3eee4 8px 16px); }
+.drop .ph { padding:24px; color:var(--muted); font-size:14px; }
+.drop .ph small { display:block; margin-top:6px; color:var(--subtle-fg); font-size:12px; }
+.lbl { font-size:14px; font-weight:500; display:flex; justify-content:space-between; }
+.hint { font-size:12px; color:var(--subtle-fg); }
+label.stack { display:flex; flex-direction:column; gap:8px; }
+textarea, input[type=text] {
+  width:100%; border:1px solid var(--border); background:var(--elev); border-radius:12px;
+  padding:10px 12px; font-size:14px; color:var(--fg); box-shadow:var(--shadow);
+}
+textarea { min-height:110px; resize:vertical; }
+textarea:focus, input:focus { outline:2px solid color-mix(in oklab, var(--ring) 50%, transparent); outline-offset:1px; }
+.row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.row3 button {
+  height:44px; border:0; border-radius:12px; background:var(--elev); color:var(--muted); box-shadow:var(--shadow); font-size:14px;
+}
+.row3 button.on { background:var(--fg); color:var(--bg); box-shadow:none; }
+.switch-row {
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  background:var(--elev); border-radius:16px; padding:10px 12px; box-shadow:var(--shadow);
+}
+.actions { display:flex; flex-wrap:wrap; gap:8px; }
+.btn {
+  height:44px; padding:0 16px; border:0; border-radius:12px; background:var(--accent); color:var(--accent-fg);
+  font-size:14px; font-weight:500; display:inline-flex; align-items:center; gap:8px;
+}
+.btn.sec { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
+.btn.ghost { background:transparent; color:var(--muted); }
+.result {
+  margin-top:32px; display:grid; gap:20px;
+}
+@media (min-width:860px){ .result { grid-template-columns:1.1fr .9fr; } }
+.compare { position:relative; border-radius:16px; overflow:hidden; background:var(--subtle); box-shadow:var(--shadow); }
+.compare img { display:block; width:100%; }
+.compare .before { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
+.panel { background:var(--elev); border-radius:24px; padding:20px; box-shadow:var(--shadow); }
+.panel h3 { font-family:var(--display); margin:0 0 8px; font-weight:500; }
+.meta { display:flex; justify-content:space-between; align-items:center; background:var(--subtle); border-radius:12px; padding:10px 12px; }
+.meta b { font-family:var(--mono); font-size:20px; font-variant-numeric:tabular-nums; }
+.about { max-width:640px; color:var(--muted); line-height:1.7; font-size:14px; }
+.about a { color:var(--fg); }
+footer { border-top:1px solid color-mix(in oklab, var(--border) 80%, transparent); margin-top:48px; }
+footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.toast {
+  position:fixed; top:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg);
+  padding:8px 14px; border-radius:999px; font-size:13px; opacity:0; pointer-events:none; transition:opacity .2s;
+  z-index:20;
+}
+.toast.show { opacity:1; }
+.hidden { display:none !important; }
+input[type=range] { accent-color:var(--accent); }
+.file { position:absolute; inset:0; opacity:0; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<header><div class="wrap nav">
+  <div class="brand">
+    <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="3" y="3" width="58" height="58" rx="4" fill="none" stroke="#B43A32" stroke-width="3"/>
+      <rect x="9" y="9" width="46" height="46" rx="2" fill="none" stroke="#B43A32" stroke-width="1.4"/>
+      <path d="M22 18h20M32 18v28M22 46h20M20 28c6 8 18 8 24 0" fill="none" stroke="#B43A32" stroke-width="2.4" stroke-linecap="square"/>
+    </svg>
+    <div><h2>隐印</h2><p>TrustMark 神经网络水印</p></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn ghost" href="./kangjietu.html" style="text-decoration:none">抗截图版</a>
+    <a class="btn ghost" href="./index.html" style="text-decoration:none">普通版</a>
+  </div>
+</div></header>
+<main class="wrap">
+  <section class="hero">
+    <h1>压一压，转一转<span>。</span></h1>
+    <p>用 Adobe 开源的 TrustMark 模型（MIT）把一小段信息写进整张图的低频里。扛 JPEG 压缩、缩放、裁边和翻转；深度找回会再试旋转。模型在你的浏览器里跑，图片不上传。</p>
+    <div class="pills"><span class="pill on">抗压缩</span><span class="pill">抗小角度旋转</span><span class="pill">C2PA 标准</span><span class="pill">本地运算</span></div>
+  </section>
+  <div class="panel" id="model-panel" style="margin-bottom:20px">
+    <div class="lbl"><span>模型</span><span class="hint" id="model-state">未加载</span></div>
+    <p class="hint" style="margin:8px 0 0">首次使用要从 Adobe 的服务器下载约 64 MB（编码器 17 MB、解码器 47 MB），之后浏览器会缓存。</p>
+    <div style="height:8px"></div>
+    <button type="button" class="btn sec" id="load-btn">加载模型</button>
+  </div>
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="embed">嵌入</button>
+    <button type="button" data-tab="extract">提取</button>
+    <button type="button" data-tab="about">原理</button>
+  </div>
+
+  <section id="tab-embed">
+    <div class="grid">
+      <div>
+        <div class="lbl" style="margin-bottom:8px"><span>原图</span><span class="hint" id="src-hint"></span></div>
+        <div class="drop" id="src-drop">
+          <div class="ph">拖入、点选或粘贴图片<small>PNG / JPEG / WebP · 任意尺寸</small></div>
+          <input class="file" id="src-file" type="file" accept="image/*"/>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div class="lbl" style="margin-bottom:8px">格式</div>
+          <div class="row3" id="mode" style="grid-template-columns:1fr 1fr">
+            <button type="button" data-k="hark" class="on">隐印（带密钥）</button>
+            <button type="button" data-k="ascii">Adobe 标准文本</button>
+          </div>
+          <p class="hint" id="mode-hint" style="margin:8px 0 0"></p>
+        </div>
+        <label class="stack"><span class="lbl">水印内容 <span class="hint" id="cap-hint"></span></span>
+          <input type="text" id="wm-text" value="隐印" autocomplete="off"/>
+        </label>
+        <label class="stack" id="key-row">密钥
+          <input type="text" id="password" value="" autocomplete="off"/>
+          <span class="hint">密钥决定内容加扰和校验。没有密钥的人读不出内容，但仍能看出“有 TrustMark”，也能用 Adobe 公开的去除模型抹掉。</span>
+        </label>
+        <label class="stack"><span class="lbl">强度 <span class="hint" id="str-out">1.0</span></span>
+          <input type="range" id="strength" min="0.6" max="1.6" step="0.1" value="1.0" style="padding:0;box-shadow:none;border:0;background:transparent"/>
+        </label>
+        <div class="actions">
+          <button type="button" class="btn" id="embed-btn">写入水印</button>
+          <button type="button" class="btn sec" id="sample-btn">试用样张</button>
+        </div>
+        <p class="hint" id="em-status" style="margin:0"></p>
+      </div>
+    </div>
+    <div class="result hidden" id="embed-result">
+      <div class="compare" id="compare"></div>
+      <div class="panel">
+        <h3>已写入</h3>
+        <div class="meta"><div><div class="hint">实际写入</div><b id="kept-out"></b></div>
+          <div style="text-align:right"><div class="hint">PSNR</div><b id="psnr-out"></b></div></div>
+        <div style="height:12px"></div>
+        <button type="button" class="btn" id="dl-btn">下载 PNG</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-extract" class="hidden">
+    <div class="grid">
+      <div>
+        <div class="lbl" style="margin-bottom:8px"><span>带水印的图</span><span class="hint" id="ex-hint"></span></div>
+        <div class="drop" id="ex-drop">
+          <div class="ph">拖入要提取的图片</div>
+          <input class="file" id="ex-file" type="file" accept="image/*"/>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <label class="stack">密钥
+          <input type="text" id="ex-password" value="" autocomplete="off" placeholder="写入时用的密钥（Adobe 标准文本不需要）"/>
+        </label>
+        <div class="switch-row">
+          <div><div style="font-size:14px;font-weight:500">深度找回</div><div class="hint">再试翻转、90° 倍数和 ±30° 旋转，最多约 100 次推理</div></div>
+          <input type="checkbox" id="ex-deep" checked/>
+        </div>
+        <button type="button" class="btn" id="extract-btn">提取水印</button>
+        <p class="hint" id="ex-status" style="margin:0"></p>
+        <div class="panel hidden" id="extract-out">
+          <div class="lbl">提取结果 <button type="button" class="btn ghost" id="copy-text">复制</button></div>
+          <p id="extract-text" style="font-family:var(--mono);font-size:14px;line-height:1.6;word-break:break-word;margin:8px 0 0"></p>
+          <p class="hint" id="extract-note" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-about" class="hidden about">
+    <p><b>怎么写进去的。</b>TrustMark 的编码器把整张图缩到 256×256，和 100 位信息一起算出一张残差，再把残差放大回原尺寸叠上去。残差是低频的，所以 JPEG 压缩、缩放、轻度裁边都伤不太到它；解码器同样把整张图缩到 256×256 读出 100 位，BCH 纠错最多修 5 位。</p>
+    <p><b>隐印格式。</b>100 位里有 61 位可用：48 位放 6 字节内容（约 2 个汉字或 6 个字母），按密钥加扰；13 位放跟密钥绑定的校验。深度找回会试几十种角度和裁切，只有校验通过才算数，免得把偶然通过纠错的噪声当结果。</p>
+    <p><b>Adobe 标准文本。</b>和 Adobe 官方实现兼容，最多 8 个 ASCII 字符，任何 TrustMark 解码器都能读，但没有校验，所以只认原图直接读出的结果。</p>
+    <p><b>扛不住的。</b>截得太狠（只剩原图三分之一左右）、小块截图、超过 30° 的旋转、很重的压缩（JPEG 质量 20 左右）。别人用 TrustMark 再写一遍会直接覆盖你的；Adobe 还公开了去除模型。这些情况请用<a href="./kangjietu.html">抗截图版</a>，它带密钥、抗重写、抗小块截图。</p>
+    <p>模型与 BCH 纠错代码来自 <a href="https://github.com/adobe/trustmark" target="_blank" rel="noreferrer">adobe/trustmark</a>（MIT，Tu Bui、Shruti Agarwal、John Collomosse，ICCV 2025），推理用 <a href="https://onnxruntime.ai/" target="_blank" rel="noreferrer">ONNX Runtime Web</a>。</p>
+  </section>
+</main>
+<footer><div class="wrap"><span>隐印 · TrustMark 版</span><span>模型 MIT © Adobe · 浏览器本地运算</span></div></footer>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.js"></script>
+<script>
+/*!
+ * BCH ECC Library
+ * Copyright 2024 Adobe. All rights reserved.
+ * Licensed under the MIT License.
+ *
+ * NOTICE: Adobe permits you to use, modify, and distribute this file in
+ * accordance with the terms of the Adobe license agreement accompanying it.
+ */function uint8ToBoolean(t){const n=[];for(let e=0;e<t.length;e++){let l=t[e];n.push((l&128)>0),n.push((l&64)>0),n.push((l&32)>0),n.push((l&16)>0),n.push((l&8)>0),n.push((l&4)>0),n.push((l&2)>0),n.push((l&1)>0)}return n}function load4bytes(t){let n=BigInt(0);return t.length>0&&(n+=t[0]<<BigInt(24)),t.length>1&&(n+=t[1]<<BigInt(16)),t.length>2&&(n+=t[2]<<BigInt(8)),t.length>3&&(n+=t[3]<<BigInt(0)),n}function loadwordfrombits(t,n){let e=BigInt(0);n<t.length&&(n=t.length);let l=n-1;for(let r=0;r<n;r++)t[r]&&(e+=BigInt(1)<<BigInt(l)),l--;return e}function loadallwords(t,n){const e=t.length;let l=Math.floor(e/n),r=[],u=0;for(;l>0;){let h=loadwordfrombits(t.slice(u,u+n),n);r.push(h),u+=n,l--}if(t=t.slice(u,t.length),t.length>0){let h=loadwordfrombits(t,n);r.push(h)}return r}function BCH_Encode(t,n){let e=loadallwords(n,8);const l=e.length,r=ceilop(t.ECCstate.m*t.ECCstate.t,32)-1;let u=Array(t.ECCstate.ecc_bytes).fill(0);const E=ceilop(1984,32);let h=Array(E).fill(BigInt(0));const i=0,a=i+256*(r+1),g=a+256*(r+1),f=g+256*(r+1);let m=Math.floor(l/4),p=0;for(;m>0;){let C=load4bytes(e.slice(p,p+4));C=C^h[0];const s=i+(r+1)*Number(C>>BigInt(0)&BigInt(255)),o=a+(r+1)*Number(C>>BigInt(8)&BigInt(255)),y=g+(r+1)*Number(C>>BigInt(16)&BigInt(255)),j=f+(r+1)*Number(C>>BigInt(24)&BigInt(255));for(let B=0;B<r;B++)h[B]=h[B+1]^t.ECCstate.cyclic_tab[s+B]^t.ECCstate.cyclic_tab[o+B]^t.ECCstate.cyclic_tab[y+B]^t.ECCstate.cyclic_tab[j+B];h[r]=t.ECCstate.cyclic_tab[s+r]^t.ECCstate.cyclic_tab[o+r]^t.ECCstate.cyclic_tab[y+r]^t.ECCstate.cyclic_tab[j+r],m--,p+=4}e=e.slice(p,e.length);let w=e.length;u=h;let x=0;for(;w;){const C=e[x];x++;let s=(r+1)*Number((u[0]>>BigInt(24)^C)&BigInt(255));for(let o=0;o<r;o++)u[o]=(u[o]<<BigInt(8)&BigInt(4294967295)|u[o+1]>>BigInt(24))^t.ECCstate.cyclic_tab[s],s++;u[r]=u[r]<<BigInt(8)&BigInt(4294967295)^t.ECCstate.cyclic_tab[s],w--}t.ECCstate.ecc_buf=u;let d=[];for(let C=0;C<h.length;C++){const s=h[C];d.push(Number(s>>BigInt(24))&255),d.push(Number(s>>BigInt(16))&255),d.push(Number(s>>BigInt(8))&255),d.push(Number(s>>BigInt(0))&255)}return d=d.slice(0,t.ECCstate.ecc_bytes),d}function int8_stringify(t){return t.map(n=>String.fromCharCode(Number(n))).join("")}function toBinaryString(t,n){let e=t.toString(2);for(;e.length<n;)e="0"+e;return e}function genBinString(t,n){let e="";for(let l=0;l<t.length;l++)e+=toBinaryString(t[l],8);return e=e.slice(0,n),e}function bin_stringify(t){return t.join("")}function deepcopy(t){const n={};return n.deg=t.deg,n.c=Array.from(t.c),n}function BCH_Decode(t,n,e){const l=BCH_Encode(t,n),r=e.length,u=loadallwords(e,32),E=ceilop(t.ECCstate.m*t.ECCstate.t,32);let h=BigInt(0);for(let c=0;c<E;c++)t.ECCstate.ecc_buf[c]=t.ECCstate.ecc_buf[c]^u[c],h=h|t.ECCstate.ecc_buf[c];let i=loadallwords(n,8);if(h===0){const c=Object();return c.data_ascii=int8_stringify(i),c.data_binary=bin_stringify(n),c.bitflips=0,c.valid=!0,c}let a=t.ECCstate.ecc_bits;const g=t.ECCstate.t,f=Array(2*g).fill(0);let m=a&31,p=t.ECCstate.ecc_buf;if(m){const c=p[Math.floor(a/32)]&~BigInt(Math.pow(2,Number(32-m))-1);p[Math.floor(a/32)]=c}let w=0;for(;a>0||w===0;){let c=p[w];for(w+=1,a-=32;c;){const b=degBigInt(t,c);for(let _=0;_<2*g;_+=2)f[_]=f[_]^g_pow(t,(_+1)*(b+a));c=c^BigInt(Math.pow(2,b))}}for(let c=0;c<g;c++)f[2*c+1]=g_sqrt(t,f[c]);const x=t.ECCstate.n;let d=-1,C=1,s=Object();s.deg=0,s.c=Array(2*g).fill(0),s.c[0]=1;let o=Object();o.deg=0,o.c=Array(2*g).fill(0),o.c[0]=1;let y=f[0],j=Object();for(let c=0;c<g&&!(o.deg>g);c++){if(y){const b=2*c-d;j=deepcopy(o);const _=g_log(t,y)+x-g_log(t,C);for(let A=0;A<s.deg+1;A++)if(s.c[A]){const q=g_log(t,s.c[A]);o.c[A+b]=o.c[A+b]^g_pow(t,_+q)}const M=s.deg+b;M>o.deg&&(o.deg=M,s=deepcopy(j),C=y,d=2*c)}if(c<g-1){y=f[2*c+2];for(let b=1;b<o.deg+1;b++)y=y^g_mul(t,o.c[b],f[2*c+2-b])}}t.ECCstate.elp=o;const B=getroots(t,i.length,t.ECCstate.elp);i=loadallwords(n,8);const N=loadallwords(e,8),O=i.length*8+t.ECCstate.ecc_bits,I=Object();if(I.bitflips=B,I.valid=!1,B!==t.ECCstate.elp.deg||B<0||B>g)return I.bitflips=-1,I;for(let c=0;c<B;c++){if(t.ECCstate.errloc[c]>=O)return I;t.ECCstate.errloc[c]=O-1-t.ECCstate.errloc[c],t.ECCstate.errloc[c]=t.ECCstate.errloc[c]&-8|7-(t.ECCstate.errloc[c]&7)}for(let c=0;c<t.ECCstate.errloc.length;c++){const b=Number(t.ECCstate.errloc[c]),_=Math.floor(b/8),M=Math.pow(2,b&7);b<(i.length+N.length)*8&&(_<i.length?i[_]=i[_]^BigInt(M):N[_-i.length]=N[_-i.length]^BigInt(M))}const S=i.length*8-n.length;if(S&&(i[i.length-1]&(BigInt(1)<<BigInt(S))-BigInt(1))!==BigInt(0))return I.bitflips=-1,I;const k=genBinString(i,n.length),H=Array.from(k,c=>c==="1"),D=BCH_Encode(t,H);return genBinString(D,t.ECCstate.ecc_bits)!==genBinString(N,t.ECCstate.ecc_bits)?(I.bitflips=-1,I):(I.data_ascii=int8_stringify(i),I.data_binary=k,I.valid=!0,I)}function getroots(t,n,e){let l=Array();if(e.deg>2){n=n*8+t.ECCstate.ecc_bits;let r=Array(t.ECCstate.t*2).fill(0),u=e.deg,E=t.ECCstate.n-g_log(t,e.c[e.deg]);for(let i=0;i<u;i++)e.c[i]?r[i]=mod(t,g_log(t,e.c[i])+E):r[i]=-1;r[e.deg]=0;let h=g_div(t,e.c[0],e.c[e.deg]);for(let i=t.ECCstate.n-n+1;i<t.ECCstate.n+1;i++){let a=h;for(let g=1;g<e.deg+1;g++){let f=r[g];f>=0&&(a=a^g_pow(t,f+g*i))}if(a==0&&(l.push(t.ECCstate.n-i),l.length==e.deg))break}if(l.length<e.deg)return t.ECCstate.errloc=[],-1}if(e.deg==1&&e.c[0]&&l.push(mod(t,t.ECCstate.n-t.ECCstate.logarithms[e.c[0]]+t.ECCstate.logarithms[e.c[1]])),e.deg==2&&e.c[0]&&e.c[1]){let r=t.ECCstate.logarithms[e.c[0]],u=t.ECCstate.logarithms[e.c[1]],E=t.ECCstate.logarithms[e.c[2]],h=g_pow(t,r+E+2*(t.ECCstate.n-u)),i=0,a=h;for(;a;){let g=deg(t,a);i=i^t.ECCstate.elp_pre[g],a=a^Math.pow(2,g)}(g_sqrt(t,i)^i)==h&&(l.push(modn(t,2*t.ECCstate.n-u-t.ECCstate.logarithms[i]+E)),l.push(modn(t,2*t.ECCstate.n-u-t.ECCstate.logarithms[i^1]+E)))}return t.ECCstate.errloc=l,l.length}function BCH(t,n){const e=Object();e.ECCstate=Object();let l=n,r=0;for(;l>>1;)l=l>>1,r+=1;e.ECCstate.m=r,e.ECCstate.t=t,e.ECCstate.poly=Object(),e.ECCstate.n=Math.pow(2,r)-1;let u=ceilop(r*t,32);e.ECCstate.ecc_bytes=ceilop(r*t,8),e.ECCstate.cyclic_tab=new Array(u*1024).fill(BigInt(0)),e.ECCstate.syn=new Array(2*t).fill(0),e.ECCstate.elp=new Array(t+1).fill(0),e.ECCstate.errloc=new Array(t).fill(0);let E=1,h=Math.pow(2,deg(e,n));if(h!==Math.pow(2,e.ECCstate.m))return-1;e.ECCstate.exponents=new Array(1+e.ECCstate.n).fill(0),e.ECCstate.logarithms=new Array(1+e.ECCstate.n).fill(0),e.ECCstate.elp_pre=new Array(1+e.ECCstate.m).fill(0);for(let C=0;C<e.ECCstate.n;C++){if(e.ECCstate.exponents[C]=E,e.ECCstate.logarithms[E]=C,C&&E===1)return-1;E*=2,E&h&&(E=E^n)}e.ECCstate.logarithms[0]=0,e.ECCstate.exponents[e.ECCstate.n]=1;let i=0;const a=Object();a.deg=0,a.c=new Array(r*t+1).fill(0);let g=new Array(e.ECCstate.n+1).fill(0),f=new Array(ceilop(r*t+1,32)).fill(0);for(let C=0;C<t;C++){let s=2*C+1;for(let o=0;o<r;o++)g[s]=1,s=mod(e,2*s)}a.deg=0,a.c[0]=1;for(let C=0;C<e.ECCstate.n;C++)if(g[C]){let s=e.ECCstate.exponents[C];a.c[a.deg+1]=1;for(let o=a.deg;o>0;o--)a.c[o]=g_mul(e,a.c[o],s)^a.c[o-1];a.c[0]=g_mul(e,a.c[0],s),a.deg+=1}i=a.deg+1;let m=0;for(;i>0;){let C;i>32?C=32:C=i;let s=BigInt(0);for(let o=0;o<C;o++)a.c[i-1-o]&&(s=s|BigInt(Math.pow(2,31-o)));f[m]=s,m+=1,i-=C}e.ECCstate.ecc_bits=a.deg,build_cyclic(e,f);let p=0,w=0;for(let C=0;C<r;C++){for(let s=0;s<r;s++)p=p^g_pow(e,C*Math.pow(2,s));if(p){w=e.ECCstate.exponents[C];break}}E=0;let x=new Array(31).fill(0),d=r;for(;E<=e.ECCstate.n&&d;){let C=g_sqrt(e,E)^E;for(let s=0;s<2;s++){let o=g_log(e,C);if(C&&o<r&&!x[o]){e.ECCstate.elp_pre[o]=E,x[o]=1,d-=1;break}C=C^w}E+=1}return e}function g_inv(t,n){return t.ECCstate.exponents[t.ECCstate.n-t.ECCstate.logarithms[n]]}function g_sqrt(t,n){return n?t.ECCstate.exponents[mod(t,2*t.ECCstate.logarithms[n])]:0}function mod(t,n){return n<t.ECCstate.n?n:n-t.ECCstate.n}function ceilop(t,n){return Math.floor((t+n-1)/n)}function g_mul(t,n,e){if(n>0&&e>0){let l=mod(t,t.ECCstate.logarithms[n]+t.ECCstate.logarithms[e]);return t.ECCstate.exponents[l]}else return 0}function g_div(t,n,e){return n?t.ECCstate.exponents[mod(t,t.ECCstate.logarithms[n]+t.ECCstate.n-t.ECCstate.logarithms[e])]:0}function modn(t,n){let e=t.ECCstate.n;for(;n>=e;)n-=e,n=(n&e)+(n>>t.ECCstate.m);return n}function g_log(t,n){return t.ECCstate.logarithms[n]}function a_ilog(t,n){return mod(t,t.ECCstate.n-t.ECCstate.logarithms[n])}function g_pow(t,n){return t.ECCstate.exponents[modn(t,n)]}function deg(t,n){let e=0;for(;n>>1;)n=n>>1,e+=1;return e}function degBigInt(t,n){let e=0;for(;n>>BigInt(1);)n=n>>BigInt(1),e+=1;return e}function build_cyclic(t,n){let e=ceilop(t.ECCstate.m*t.ECCstate.t,32),l=ceilop(t.ECCstate.ecc_bits+1,32),r=ceilop(t.ECCstate.ecc_bits,32);t.ECCstate.cyclic_tab=new Array(4*256*e).fill(BigInt(0));for(let u=0;u<256;u++)for(let E=0;E<4;E++){let h=(E*256+u)*e,i=BigInt(BigInt(u)<<BigInt(8*E));for(;i;){let a=degBigInt(t,i);i=i^n[0]>>BigInt(31-a);for(let g=0;g<r;g++){let f=0,m=0;a<31?f=BigInt(n[g]<<BigInt(a+1))&BigInt(4294967295):f=BigInt(0),g+1<l?m=n[g+1]>>BigInt(31-a):m=BigInt(0);let p=f|m;t.ECCstate.cyclic_tab[g+h]==0&&(t.ECCstate.cyclic_tab[g+h]=BigInt(0)),t.ECCstate.cyclic_tab[g+h]=t.ECCstate.cyclic_tab[g+h]^p}}}}
+
+</script>
+<script>
+/* 隐印 · TrustMark 版核心（浏览器与 Node 通用）
+ * 依赖：Adobe BCH 库（BCH / BCH_Encode / BCH_Decode，MIT），以及调用方提供的
+ *   runEnc(Float32Array 3*256*256, Float32Array 100) -> Float32Array 3*256*256
+ *   runDec(Float32Array 3*256*256) -> Float32Array 100
+ */
+const TM = (() => {
+  const RES = 256;
+  const VERSION_BITS = [0, 0, 0, 1]; // schema 1 = BCH_5：61 位数据 + 35 位纠错
+  let eng5 = null;
+  const eng = () => (eng5 || (eng5 = BCH(5, 137)));
+
+  function fnv(bytes, h = 0x811c9dc5) {
+    for (const b of bytes) { h ^= b; h = Math.imul(h, 16777619) >>> 0; }
+    return h >>> 0;
+  }
+  const u8 = (s) => new TextEncoder().encode(s);
+  function keyStream(key, n) {
+    let s = fnv(u8("ks|" + key)) || 1;
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; out[i] = s & 255; }
+    return out;
+  }
+  function tag13(key, plain) {
+    const a = u8("tag|" + key + "|");
+    const b = new Uint8Array(a.length + plain.length); b.set(a); b.set(plain, a.length);
+    return fnv(b) & 0x1fff;
+  }
+  /** 6 字节（UTF-8 截断在字符边界）+ 13 位校验，密钥决定加扰和校验 */
+  function packHark(text, key) {
+    let kept = "";
+    for (const ch of text) { if (u8(kept + ch).length > 6) break; kept += ch; }
+    const plain = new Uint8Array(6); plain.set(u8(kept));
+    const ks = keyStream(key, 6);
+    const bits = [];
+    for (let i = 0; i < 6; i++) { const v = plain[i] ^ ks[i]; for (let k = 7; k >= 0; k--) bits.push((v >> k) & 1); }
+    const t = tag13(key, plain);
+    for (let k = 12; k >= 0; k--) bits.push((t >> k) & 1);
+    return { bits, kept };
+  }
+  /** Adobe 标准文本：7 位 ASCII，最多 8 个字符 */
+  function packAscii(text) {
+    let kept = "";
+    for (const ch of text) { const c = ch.charCodeAt(0); if (c < 32 || c > 126 || kept.length >= 8) continue; kept += ch; }
+    const bits = [];
+    for (const ch of kept) { const c = ch.charCodeAt(0); for (let k = 6; k >= 0; k--) bits.push((c >> k) & 1); }
+    while (bits.length < 61) bits.push(0);
+    return { bits: bits.slice(0, 61), kept };
+  }
+  /** 61 位数据 -> 100 位包（与 Python 版 process_encode 一致） */
+  function makePacket(data61) {
+    const padded = data61.map(Boolean); while (padded.length % 8) padded.push(false);
+    const ecc = BCH_Encode(eng(), padded);
+    const eb = [];
+    for (const b of ecc) for (let k = 7; k >= 0; k--) eb.push((b >> k) & 1);
+    const packet = [...data61, ...eb.slice(0, 35), ...VERSION_BITS];
+    return Float32Array.from(packet);
+  }
+  /** 100 位 -> {valid, data61} */
+  function openPacket(bits) {
+    if (bits[98] !== 0 || bits[99] !== 1) return null; // 只认 schema 1
+    const data = Array.from(bits.slice(0, 61), (b) => b === 1);
+    const ecc = Array.from(bits.slice(61, 96), (b) => b === 1);
+    const r = BCH_Decode(eng(), data, ecc);
+    if (!r.valid) return null;
+    return Array.from(r.data_binary, (c) => (c === "1" ? 1 : 0));
+  }
+  function readHark(d61, key) {
+    const enc = new Uint8Array(6);
+    for (let i = 0; i < 6; i++) { let v = 0; for (let k = 0; k < 8; k++) v = (v << 1) | d61[i * 8 + k]; enc[i] = v; }
+    let t = 0; for (let k = 0; k < 13; k++) t = (t << 1) | d61[48 + k];
+    const ks = keyStream(key, 6);
+    const plain = enc.map((v, i) => v ^ ks[i]);
+    if (tag13(key, plain) !== t) return null;
+    let end = 6; while (end > 0 && plain[end - 1] === 0) end--;
+    return new TextDecoder("utf-8", { fatal: false }).decode(plain.subarray(0, end));
+  }
+  function readAscii(d61) {
+    let s = "";
+    for (let i = 0; i + 7 <= 61; i += 7) { let c = 0; for (let k = 0; k < 7; k++) c = (c << 1) | d61[i + k]; if (c) s += String.fromCharCode(c); }
+    return s.replace(/\0+$/, "").trim();
+  }
+
+  // ---------- 图像工具（RGBA Uint8ClampedArray） ----------
+  /** 盒式缩小到长边约 maxSide（整数倍），只用于解码前预滤波 */
+  function boxDown(rgba, w, h, maxSide) {
+    const f = Math.max(1, Math.floor(Math.max(w, h) / maxSide));
+    if (f === 1) return { rgba, w, h, f: 1 };
+    const W = Math.floor(w / f), H = Math.floor(h / f), out = new Float32Array(W * H * 3);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let j = 0; j < f; j++) { let o = ((y * f + j) * w + x * f) * 4; for (let i = 0; i < f; i++, o += 4) { r += rgba[o]; g += rgba[o + 1]; b += rgba[o + 2]; } }
+      const k = (y * W + x) * 3, n = f * f; out[k] = r / n; out[k + 1] = g / n; out[k + 2] = b / n;
+    }
+    return { rgb: out, w: W, h: H, f };
+  }
+  function toRgbF(src) {
+    if (src.rgb) return src;
+    const { rgba, w, h } = src, out = new Float32Array(w * h * 3);
+    for (let i = 0, j = 0; i < w * h; i++, j += 3) { out[j] = rgba[i * 4]; out[j + 1] = rgba[i * 4 + 1]; out[j + 2] = rgba[i * 4 + 2]; }
+    return { rgb: out, w, h };
+  }
+  /**
+   * 采样出 256×256 的模型输入（CHW，[-1,1]）。
+   * 视图：以图中心为轴旋转 angle(度)，取 (fx,fy) 比例的中心区域，再可选翻转/转 90°。
+   */
+  function sample256(img, view) {
+    const { rgb, w, h } = img;
+    const { angle = 0, fx = 1, fy = 1, cx = 0.5, cy = 0.5, k = 0 } = view || {};
+    const out = new Float32Array(3 * RES * RES);
+    const a = (angle * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+    // 输出坐标 (u,v)∈[0,1] -> 先做二面体变换 -> 区域内坐标 -> 旋转回原图
+    const rw = w * fx, rh = h * fy, ox = w * cx, oy = h * cy;
+    // 每个输出像素覆盖的源像素数，过大时多点采样防混叠
+    const sub = Math.max(1, Math.min(4, Math.round(Math.max(rw, rh) / RES)));
+    const N = RES * RES;
+    for (let v = 0; v < RES; v++) for (let u = 0; u < RES; u++) {
+      let r = 0, g = 0, b = 0;
+      for (let sj = 0; sj < sub; sj++) for (let si = 0; si < sub; si++) {
+        let s = (u + (si + 0.5) / sub) / RES, t = (v + (sj + 0.5) / sub) / RES;
+        if (k & 4) { const q = s; s = t; t = q; }
+        if (k & 1) s = 1 - s;
+        if (k & 2) t = 1 - t;
+        const dx = (s - 0.5) * rw, dy = (t - 0.5) * rh;
+        let X = ox + dx * ca - dy * sa - 0.5, Y = oy + dx * sa + dy * ca - 0.5;
+        X = Math.max(0, Math.min(w - 1.001, X)); Y = Math.max(0, Math.min(h - 1.001, Y));
+        const x0 = Math.floor(X), y0 = Math.floor(Y), ax = X - x0, ay = Y - y0;
+        const p = (y0 * w + x0) * 3, q = p + w * 3;
+        const w00 = (1 - ax) * (1 - ay), w01 = ax * (1 - ay), w10 = (1 - ax) * ay, w11 = ax * ay;
+        r += rgb[p] * w00 + rgb[p + 3] * w01 + rgb[q] * w10 + rgb[q + 3] * w11;
+        g += rgb[p + 1] * w00 + rgb[p + 4] * w01 + rgb[q + 1] * w10 + rgb[q + 4] * w11;
+        b += rgb[p + 2] * w00 + rgb[p + 5] * w01 + rgb[q + 2] * w10 + rgb[q + 5] * w11;
+      }
+      const n = sub * sub, i = v * RES + u;
+      out[i] = r / n / 127.5 - 1; out[N + i] = g / n / 127.5 - 1; out[2 * N + i] = b / n / 127.5 - 1;
+    }
+    return out;
+  }
+  /** 宽高比 >2 时只用中心正方形（与 Adobe 原版一致） */
+  function region(w, h) {
+    const ar = Math.max(w / h, h / w);
+    if (ar <= 2) return { x: 0, y: 0, w, h };
+    const s = Math.min(w, h);
+    return { x: (w - s) >> 1, y: (h - s) >> 1, w: s, h: s };
+  }
+
+  async function embed(rgba, w, h, opts, runEnc) {
+    const { text, key = "", mode = "hark", strength = 1 } = opts;
+    const pk = mode === "ascii" ? packAscii(text) : packHark(text, key);
+    const packet = makePacket(pk.bits);
+    const R = region(w, h);
+    // 区域裁出来做模型输入
+    const sub = new Uint8ClampedArray(R.w * R.h * 4);
+    for (let y = 0; y < R.h; y++) sub.set(rgba.subarray(((R.y + y) * w + R.x) * 4, ((R.y + y) * w + R.x + R.w) * 4), y * R.w * 4);
+    const pre = toRgbF(boxDown(sub, R.w, R.h, RES * 2));
+    const cover = sample256(pre, {});
+    const stego = await runEnc(cover, packet);
+    const N = RES * RES, res = new Float32Array(3 * N);
+    for (let c = 0; c < 3; c++) {
+      let m = 0;
+      for (let i = 0; i < N; i++) { const v = Math.max(-1, Math.min(1, stego[c * N + i])) - cover[c * N + i]; res[c * N + i] = v; m += v; }
+      m /= N; for (let i = 0; i < N; i++) res[c * N + i] -= m;
+    }
+    // 双线性放大残差（align_corners=False），叠回原图
+    const out = new Uint8ClampedArray(rgba);
+    const sx = RES / R.w, sy = RES / R.h;
+    const feather = Math.max(1, Math.min(50, Math.floor(Math.min(R.w, R.h) * 0.01)));
+    const partial = R.w !== w || R.h !== h;
+    for (let y = 0; y < R.h; y++) {
+      let Y = (y + 0.5) * sy - 0.5; Y = Math.max(0, Math.min(RES - 1, Y));
+      const y0 = Math.floor(Y), y1 = Math.min(RES - 1, y0 + 1), ay = Y - y0;
+      for (let x = 0; x < R.w; x++) {
+        let X = (x + 0.5) * sx - 0.5; X = Math.max(0, Math.min(RES - 1, X));
+        const x0 = Math.floor(X), x1 = Math.min(RES - 1, x0 + 1), ax = X - x0;
+        let fe = 1;
+        if (partial) { const d = Math.min(x, y, R.w - 1 - x, R.h - 1 - y); if (d < feather) fe = (d + 1) / (feather + 1); }
+        const o = ((R.y + y) * w + R.x + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          const B = c * N;
+          const v = (res[B + y0 * RES + x0] * (1 - ax) + res[B + y0 * RES + x1] * ax) * (1 - ay) + (res[B + y1 * RES + x0] * (1 - ax) + res[B + y1 * RES + x1] * ax) * ay;
+          const px = rgba[o + c] / 127.5 - 1;
+          out[o + c] = Math.round((Math.max(-1, Math.min(1, px + v * strength)) * 127.5 + 127.5) * fe + rgba[o + c] * (1 - fe));
+        }
+      }
+    }
+    return { rgba: out, kept: pk.kept, mode };
+  }
+
+  /** 解一次：返回 {hark, ascii} 或 null */
+  async function tryView(img, view, key, runDec) {
+    const logits = await runDec(sample256(img, view));
+    const bits = Array.from(logits, (v) => (v > 0 ? 1 : 0));
+    const d = openPacket(bits);
+    if (!d) return null;
+    const hark = readHark(d, key);
+    return { hark, ascii: hark === null ? readAscii(d) : null };
+  }
+
+  /**
+   * 提取。deep=false 只试原图；deep=true 时依次试翻转/90° 倍数、任意角度旋转和中心裁切。
+   * 深度搜索只接受带校验的隐印格式，避免把偶然通过纠错的噪声当成结果。
+   */
+  async function extract(rgba, w, h, opts, runDec, onProgress) {
+    const { key = "", deep = true, angleMax = 30, angleStep = 3 } = opts || {};
+    const R = region(w, h);
+    const sub = new Uint8ClampedArray(R.w * R.h * 4);
+    for (let y = 0; y < R.h; y++) sub.set(rgba.subarray(((R.y + y) * w + R.x) * 4, ((R.y + y) * w + R.x + R.w) * 4), y * R.w * 4);
+    const img = toRgbF(boxDown(sub, R.w, R.h, RES * 2));
+    let n = 0;
+    const first = await tryView(img, {}, key, runDec); n++;
+    if (first && first.hark !== null) return { text: first.hark, format: "hark", view: {}, tries: n };
+    // 原图直接通过了纠错：位置是对的，只是校验不符，不用再搜
+    if (first) return { text: first.ascii || "", format: opts && opts.preferAscii ? "ascii" : "foreign", view: {}, tries: n };
+    if (!deep) return null;
+    const views = [];
+    for (const k of [1, 2, 3, 4, 5, 6, 7]) views.push({ k });
+    const angs = [];
+    for (let a = angleStep; a <= angleMax + 1e-6; a += angleStep) angs.push(a, -a);
+    for (const a of angs) for (const f of [1, 0.82, 0.68]) views.push({ angle: a, fx: f, fy: f });
+    for (const a of angs) views.push({ angle: a, fx: 0.82, fy: 0.82, k: 1 });
+    const total = views.length + 1;
+    for (const v of views) {
+      n++;
+      if (onProgress) onProgress(n, total);
+      const r = await tryView(img, v, key, runDec);
+      if (r && r.hark !== null) return { text: r.hark, format: "hark", view: v, tries: n };
+    }
+    return null;
+  }
+
+  return { embed, extract, packHark, packAscii, makePacket, openPacket, readHark, readAscii, sample256, RES };
+})();
+if (typeof module !== "undefined") module.exports = TM;
+
+</script>
+<script>
+const MODEL_BASE = "https://cai-watermark.adobe.net/watermarking/trustmark-models/";
+if (typeof ort !== "undefined") {
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+}
+let encS = null, decS = null, loading = null, ep = "wasm";
+let source = null, probe = null, embedBlob = null, mode = "hark";
+const $ = (id) => document.getElementById(id);
+function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),1800); }
+
+async function fetchModel(name, onp) {
+  const url = MODEL_BASE + name + ".onnx";
+  let cache = null;
+  try { cache = await caches.open("yinyin-trustmark-v1"); const hit = await cache.match(url); if (hit) return new Uint8Array(await hit.arrayBuffer()); } catch (e) {}
+  const res = await fetch(url, { mode: "cors" });
+  if (!res.ok) throw new Error("模型下载失败（" + res.status + "）");
+  const total = +res.headers.get("content-length") || 0;
+  const reader = res.body.getReader(); const parts = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; onp(got, total); }
+  const buf = new Uint8Array(got); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
+  try { if (cache) await cache.put(url, new Response(buf.slice(), { headers: { "content-type": "application/octet-stream" } })); } catch (e) {}
+  return buf;
+}
+let gpuOk = null;
+async function makeSession(bytes) {
+  if (gpuOk === null) {
+    try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (e) { gpuOk = false; }
+    // 没有 WebGPU 时把 CPU 推理放进 Worker，深度找回期间页面不卡（输入会被转移，所以传副本）
+    if (!gpuOk) ort.env.wasm.proxy = true;
+  }
+  if (gpuOk) {
+    try { const s = await ort.InferenceSession.create(bytes, { executionProviders: ["webgpu"] }); ep = "webgpu"; return s; } catch (e) { console.warn("WebGPU 不可用，改用 CPU", e); }
+  }
+  ep = "wasm";
+  return ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
+}
+function loadModels() {
+  if (loading) return loading;
+  const st = $("model-state");
+  loading = (async () => {
+    if (typeof ort === "undefined") throw new Error("推理库没加载上（cdn.jsdelivr.net 连不上），刷新再试");
+    const fmt = (g, t) => (g / 1048576).toFixed(1) + (t ? " / " + (t / 1048576).toFixed(1) : "") + " MB";
+    st.textContent = "下载编码器…";
+    const e = await fetchModel("encoder_Q", (g, t) => (st.textContent = "下载编码器 " + fmt(g, t)));
+    st.textContent = "下载解码器…";
+    const d = await fetchModel("decoder_Q", (g, t) => (st.textContent = "下载解码器 " + fmt(g, t)));
+    st.textContent = "初始化…";
+    encS = await makeSession(e); decS = await makeSession(d);
+    st.textContent = "已就绪 · " + (ep === "webgpu" ? "GPU 加速" : "CPU");
+    $("load-btn").classList.add("hidden");
+  })().catch((err) => { loading = null; st.textContent = "加载失败：" + (err.message || err); throw err; });
+  return loading;
+}
+let lock = Promise.resolve();
+function serial(fn) { const p = lock.then(fn, fn); lock = p.catch(() => {}); return p; }
+const runEnc = (c, b) => serial(async () => {
+  const o = await encS.run({ [encS.inputNames[0]]: new ort.Tensor("float32", c.slice(), [1, 3, 256, 256]), [encS.inputNames[1]]: new ort.Tensor("float32", b.slice(), [1, 100]) });
+  return o[encS.outputNames[0]].data;
+});
+const runDec = (c) => serial(async () => {
+  const o = await decS.run({ [decS.inputNames[0]]: new ort.Tensor("float32", c, [1, 3, 256, 256]) });
+  return o[decS.outputNames[0]].data;
+});
+
+function randKey(){ const a=new Uint32Array(2); crypto.getRandomValues(a); return (a[0].toString(36)+a[1].toString(36)).slice(0,10); }
+$("password").value = randKey();
+function fileToImage(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const maxEdge=4096, longest=Math.max(img.width,img.height), scale=longest>maxEdge?maxEdge/longest:1;
+      const w=Math.max(2,Math.round(img.width*scale)), h=Math.max(2,Math.round(img.height*scale));
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      const ctx=c.getContext("2d"); ctx.drawImage(img,0,0,w,h);
+      if(scale<1) toast("图片较大，已缩到长边 4096");
+      resolve({rgba:ctx.getImageData(0,0,w,h).data,width:w,height:h,url,name:file.name});
+    };
+    img.onerror=()=>reject(new Error("无法读取图片"));
+    img.src=url;
+  });
+}
+function rgbaToCanvas(rgba,w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba),w,h),0,0); return c; }
+function showDrop(el,url){ let img=el.querySelector("img"); if(!img){ img=document.createElement("img"); el.appendChild(img);} img.src=url; }
+function bindDrop(drop,input,handler){
+  drop.addEventListener("dragover",e=>e.preventDefault());
+  drop.addEventListener("drop",e=>{e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) handler(f);});
+  input.addEventListener("change",e=>{ const f=e.target.files[0]; if(f) handler(f); e.target.value=""; });
+}
+function capHint(){
+  const t=$("wm-text").value;
+  if(mode==="hark"){ const p=TM.packHark(t,""); $("cap-hint").textContent="最多 6 字节 · 将写入「"+p.kept+"」"; }
+  else { const p=TM.packAscii(t); $("cap-hint").textContent="最多 8 个 ASCII 字符 · 将写入「"+p.kept+"」"; }
+}
+function setMode(k){
+  mode=k; document.querySelectorAll("#mode button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+  $("key-row").classList.toggle("hidden",k!=="hark");
+  $("mode-hint").textContent=k==="hark"?"6 字节内容 + 密钥校验，可深度找回（旋转、翻转）。":"兼容 Adobe 官方解码器，最多 8 个 ASCII 字符，不带校验，只认直接读出。";
+  capHint();
+}
+document.querySelectorAll("#mode button").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.k)));
+$("wm-text").addEventListener("input",capHint);
+$("strength").addEventListener("input",()=>$("str-out").textContent=(+$("strength").value).toFixed(1));
+setMode("hark");
+document.querySelectorAll(".tabs button").forEach(btn=>btn.addEventListener("click",()=>{
+  document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active")); btn.classList.add("active");
+  ["embed","extract","about"].forEach(id=>$("tab-"+id).classList.toggle("hidden",btn.dataset.tab!==id));
+}));
+$("load-btn").onclick=()=>loadModels().catch(()=>{});
+
+async function onSrc(file){
+  try{ source=await fileToImage(file); showDrop($("src-drop"),source.url); $("src-hint").textContent=source.width+"×"+source.height; $("embed-result").classList.add("hidden"); }
+  catch(e){ toast(e.message); }
+}
+async function onProbe(file){
+  try{ probe=await fileToImage(file); showDrop($("ex-drop"),probe.url); $("ex-hint").textContent=probe.width+"×"+probe.height; $("extract-out").classList.add("hidden"); $("ex-status").textContent=""; }
+  catch(e){ toast(e.message); }
+}
+bindDrop($("src-drop"),$("src-file"),onSrc);
+bindDrop($("ex-drop"),$("ex-file"),onProbe);
+window.addEventListener("paste",e=>{
+  const f=[...e.clipboardData.files].find(x=>x.type.startsWith("image/")); if(!f) return;
+  const tab=document.querySelector(".tabs button.active").dataset.tab;
+  if(tab==="extract") onProbe(f); else if(tab==="embed") onSrc(f);
+});
+$("sample-btn").onclick=()=>{
+  const w=960,h=600,c=document.createElement("canvas"); c.width=w; c.height=h; const x=c.getContext("2d");
+  const g=x.createLinearGradient(0,0,w,h); g.addColorStop(0,"#d9c7a7"); g.addColorStop(1,"#6b4e3d"); x.fillStyle=g; x.fillRect(0,0,w,h);
+  for(let i=0;i<40;i++){ x.fillStyle=`hsla(${(i*37)%360},45%,${40+(i%5)*8}%,.55)`; x.beginPath(); x.arc((i*211)%w,(i*137)%h,20+(i*13)%70,0,7); x.fill(); }
+  x.fillStyle="#1a1714"; x.font="600 72px serif"; x.fillText("隐印 TrustMark",80,320);
+  const d=x.getImageData(0,0,w,h);
+  source={rgba:d.data,width:w,height:h,url:c.toDataURL("image/png"),name:"sample.png"};
+  showDrop($("src-drop"),source.url); $("src-hint").textContent=w+"×"+h; toast("已载入样张");
+};
+function psnr(a,b){ let s=0,n=0; for(let i=0;i<a.length;i+=4){ for(let c=0;c<3;c++){ const d=a[i+c]-b[i+c]; s+=d*d; } n+=3; } const mse=s/n; return mse===0?Infinity:10*Math.log10(255*255/mse); }
+
+$("embed-btn").onclick=async()=>{
+  if(!source){ toast("请先选择图片"); return; }
+  const text=$("wm-text").value; if(!text.trim()){ toast("请填写水印内容"); return; }
+  const btn=$("embed-btn"), st=$("em-status"); btn.disabled=true;
+  try{
+    st.textContent="准备模型…"; await loadModels();
+    st.textContent="写入中…"; await new Promise(r=>setTimeout(r,20));
+    const r=await TM.embed(source.rgba,source.width,source.height,{text,key:$("password").value,mode,strength:+$("strength").value},runEnc);
+    const cv=rgbaToCanvas(r.rgba,source.width,source.height);
+    embedBlob=await new Promise(res=>cv.toBlob(res,"image/png"));
+    const box=$("compare"); box.innerHTML=""; const im=document.createElement("img"); im.src=URL.createObjectURL(embedBlob); box.appendChild(im);
+    $("kept-out").textContent=r.kept||"（空）"; const p=psnr(source.rgba,r.rgba); $("psnr-out").textContent=isFinite(p)?p.toFixed(1)+" dB":"∞";
+    $("embed-result").classList.remove("hidden"); st.textContent="";
+  }catch(e){ st.textContent=""; toast(e.message||"写入失败"); }
+  finally{ btn.disabled=false; }
+};
+$("dl-btn").onclick=()=>{ if(!embedBlob) return; const a=document.createElement("a"); a.href=URL.createObjectURL(embedBlob); a.download="yinyin-trustmark.png"; a.click(); };
+$("extract-btn").onclick=async()=>{
+  if(!probe){ toast("请先选择图片"); return; }
+  const btn=$("extract-btn"), st=$("ex-status"); btn.disabled=true; $("extract-out").classList.add("hidden");
+  try{
+    st.textContent="准备模型…"; await loadModels();
+    st.textContent="读取中…"; const t0=performance.now();
+    const r=await TM.extract(probe.rgba,probe.width,probe.height,{key:$("ex-password").value,deep:$("ex-deep").checked,preferAscii:!$("ex-password").value.trim()},runDec,(n,total)=>{ st.textContent=`深度找回 ${n} / ${total}`; });
+    const secs=((performance.now()-t0)/1000).toFixed(1);
+    if(r&&r.format==="foreign"){
+      $("extract-text").textContent="检测到 TrustMark 水印，但不是这把密钥写的";
+      $("extract-note").textContent=`按 Adobe 标准文本读是「${r.text}」，是乱码就说明密钥不对，或者是别的工具写的 · ${secs} 秒`;
+      $("extract-out").classList.remove("hidden"); st.textContent=""; return;
+    }
+    if(!r){ st.textContent=`没找到能通过校验的水印（${secs} 秒）。检查密钥，或这张图被截得太狠、转得太多。`; return; }
+    $("extract-text").textContent=r.text||"（空）";
+    const v=r.view||{}, notes=[];
+    if(v.k) notes.push(["","水平翻转","垂直翻转","旋转 180°","转置","旋转 90°","旋转 270°","反转置"][v.k]);
+    if(v.angle) notes.push("校正约 "+Math.abs(v.angle)+"° 旋转");
+    if(v.fx&&v.fx<1) notes.push("取中心 "+Math.round(v.fx*100)+"%");
+    $("extract-note").textContent=(r.format==="hark"?"隐印格式 · 密钥校验通过":"Adobe 标准文本 · 无校验")+(notes.length?" · "+notes.join("，"):"")+` · ${r.tries} 次推理 ${secs} 秒`;
+    $("extract-out").classList.remove("hidden"); st.textContent="";
+  }catch(e){ st.textContent=""; toast(e.message||"提取失败"); }
+  finally{ btn.disabled=false; }
+};
+$("copy-text").onclick=()=>{ navigator.clipboard.writeText($("extract-text").textContent); toast("已复制"); };
+
+</script>
+</body>
+</html>

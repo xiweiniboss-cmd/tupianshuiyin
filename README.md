@@ -32,3 +32,12 @@
 `node test/robustness.js` 用本页引擎做嵌入、JPEG、裁边、旋转和旧版兼容检查（需要本机有 Python Pillow）。
 
 算法移植自 [guofei9987/blind_watermark](https://github.com/guofei9987/blind_watermark)（MIT License）。
+
+## TrustMark 版（trustmark.html）
+
+用 Adobe 开源的 [TrustMark](https://github.com/adobe/trustmark)（MIT）Q 模型在浏览器里写入/读取 100 位水印，推理用 ONNX Runtime Web（有 WebGPU 用 GPU，否则 CPU 放进 Worker）。模型首次从 Adobe CDN 下载约 64 MB 后缓存。
+
+- 隐印格式：6 字节内容按密钥加扰 + 13 位密钥校验；深度找回会试翻转、90° 倍数、±30° 旋转和中心裁切，只接受校验通过的结果。
+- Adobe 标准文本：最多 8 个 ASCII 字符，兼容官方解码器。
+- 实测（960×540）：JPEG 30/50、缩放 0.75+JPEG80、裁边 10%、不对称裁切、翻转、90°、5–25° 旋转可读；裁 20%+放大+JPEG85、400×300 小块读不出。别人用 TrustMark 重写会覆盖，Adobe 也公开了去除模型。
+- 只做写入和检测，不提供去除功能。
