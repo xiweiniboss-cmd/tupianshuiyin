@@ -123,7 +123,7 @@ footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:fle
 <main class="wrap">
   <section class="hero">
     <h1>截了图，也还在<span>。</span></h1>
-    <p>两层水印：一层平铺扩频图样，截图、裁切、缩放、翻转后都能自己对齐找回；一层 DWT-DCT-SVD 存完整文本。别人用别的密钥再写一遍，也盖不掉你的。</p>
+    <p>两层水印：一层平铺扩频图样，截图、裁切、缩放、翻转、任意角度旋转后都能自己对齐找回；一层 DWT-DCT-SVD 存完整文本。别人用别的密钥再写一遍，也盖不掉你的。</p>
     <div class="pills"><span class="pill on">抗截图</span><span class="pill">抗重写</span><span class="pill">本地运算</span></div>
   </section>
   <div class="tabs" role="tablist">
@@ -220,10 +220,10 @@ footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:fle
   </section>
 
   <section id="tab-about" class="hidden about">
-    <p><b>抗截图层。</b>由密钥生成一组 128×128 的伪随机图样（2×2 像素一格），平铺满整张图，按纹理多少调节强弱叠在亮度上。截图会裁切、缩放，但图样的周期还在：提取时先用自相关量出周期（也就是缩放比例），把整张图按周期折叠成一块，再用 FFT 找出裁切偏移，最后逐比特相关解码，CRC16 校验通过才算数。翻转和 90° 旋转也会自动试。</p>
+    <p><b>抗截图层。</b>由密钥生成一组 128×128 的伪随机图样（2×2 像素一格），平铺满整张图，按纹理多少调节强弱叠在亮度上。截图会裁切、缩放，但图样的周期还在：提取时先用自相关量出周期（也就是缩放比例），把整张图按周期折叠成一块，再用 FFT 找出裁切偏移，最后逐比特相关解码，CRC16 校验通过才算数。翻转和 90° 旋转也会自动试。任意角度旋转时，图样的平铺网格跟着转，提取前先从二维自相关的峰位量出网格的角度和周期，再按转过的网格折叠。</p>
     <p><b>抗重写。</b>不同密钥的图样彼此近似正交，后写的水印只是叠加，不会覆盖你的。所以密钥一定要保密：知道密钥的人可以把图样减掉。</p>
     <p><b>完整文本层。</b>用 DWT-DCT-SVD（移植自 <a href="https://github.com/guofei9987/blind_watermark" target="_blank" rel="noreferrer">guofei9987/blind_watermark</a>，MIT）存完整文本，图片没被裁切缩放时能读出。</p>
-    <p><b>仍然扛不住的。</b>任意角度旋转、透视变形（比如对着屏幕拍照）、截得比两个图块还小（约 256 像素见方）、重度压缩或强降噪。重写后两份水印会同时存在，它能证明“你的在里面”，但不能单独证明谁先写的。</p>
+    <p><b>仍然扛不住的。</b>透视变形（比如对着屏幕拍照）、截得比两个图块还小（约 256 像素见方）、重度压缩或强降噪。重写后两份水印会同时存在，它能证明“你的在里面”，但不能单独证明谁先写的。</p>
   </section>
 </main>
 <footer><div class="wrap"><span>隐印 YinYin</span><span>基于 DWT-DCT-SVD 盲水印 · 图片不离开浏览器</span></div></footer>
@@ -1262,15 +1262,73 @@ function fft2(re, im, n, inv) {
     for (let y = 0; y < n; y++) { for (let x = 0; x < n; x++) { r[x] = re[y * n + x]; i2[x] = im[y * n + x]; } fft1(r, i2, inv); for (let x = 0; x < n; x++) { re[y * n + x] = r[x]; im[y * n + x] = i2[x]; } }
     for (let x = 0; x < n; x++) { for (let y = 0; y < n; y++) { r[y] = re[y * n + x]; i2[y] = im[y * n + x]; } fft1(r, i2, inv); for (let y = 0; y < n; y++) { re[y * n + x] = r[y]; im[y * n + x] = i2[y]; } }
 }
-/** 按周期 (px, py) 把残差折叠成 128×128 */
-function l2Fold(R, w, h, px, py) {
+/** 按周期 (px, py) 把残差折叠成 128×128；theta 不为 0 时按旋转后的网格折叠 */
+function l2Fold(R, w, h, px, py, theta) {
     const T = new Float64Array(L2_T * L2_T);
     const sx = L2_T / px, sy = L2_T / py;
+    if (!theta) {
+        for (let y = 0; y < h; y++) {
+            const v = Math.floor(y * sy) & (L2_T - 1), o = y * w;
+            for (let x = 0; x < w; x++) T[v * L2_T + (Math.floor(x * sx) & (L2_T - 1))] += R[o + x];
+        }
+        return T;
+    }
+    const c = Math.cos(theta), s = Math.sin(theta);
+    const ax = c * sx, ay = s * sx, bx = -s * sy, by = c * sy;
     for (let y = 0; y < h; y++) {
-        const v = Math.floor(y * sy) & (L2_T - 1), o = y * w;
-        for (let x = 0; x < w; x++) T[v * L2_T + (Math.floor(x * sx) & (L2_T - 1))] += R[o + x];
+        let u = y * ay, v = y * by; const o = y * w;
+        for (let x = 0; x < w; x++, u += ax, v += bx) {
+            const r = R[o + x];
+            if (r !== 0) T[(Math.floor(v) & (L2_T - 1)) * L2_T + (Math.floor(u) & (L2_T - 1))] += r;
+        }
     }
     return T;
+}
+/** 用残差的二维自相关估计平铺网格的旋转角和周期，返回候选 [周期, 弧度] */
+function l2RotCands(R, w, h) {
+    let N = 256; while (N < Math.max(w, h) && N < 1024) N <<= 1;
+    const re = new Float64Array(N * N), im = new Float64Array(N * N);
+    const ox = Math.max(0, (w - N) >> 1), oy = Math.max(0, (h - N) >> 1);
+    for (let y = 0; y < Math.min(N, h); y++) for (let x = 0; x < Math.min(N, w); x++) re[y * N + x] = R[(y + oy) * w + x + ox];
+    fft2(re, im, N, false);
+    for (let i = 0; i < N * N; i++) { re[i] = re[i] * re[i] + im[i] * im[i]; im[i] = 0; }
+    fft2(re, im, N, true);
+    const at = (dx, dy) => re[((dy + N) % N) * N + ((dx + N) % N)];
+    const rmax = Math.min(300, Math.floor(Math.min(w, h) * 0.6), N / 2 - 2);
+    const pk = [];
+    let m = 0, q = 0, n = 0;
+    for (let dy = 0; dy <= rmax; dy++) for (let dx = -rmax; dx <= rmax; dx++) {
+        const r2 = dx * dx + dy * dy; if (r2 < 40 * 40 || r2 > rmax * rmax || (dy === 0 && dx < 0)) continue;
+        const v = at(dx, dy); m += v; q += v * v; n++;
+    }
+    if (!n) return [];
+    m /= n; const sd = Math.sqrt(q / n - m * m) || 1;
+    for (let dy = 0; dy <= rmax; dy++) for (let dx = -rmax; dx <= rmax; dx++) {
+        const r2 = dx * dx + dy * dy; if (r2 < 40 * 40 || r2 > rmax * rmax || (dy === 0 && dx < 0)) continue;
+        const v = at(dx, dy); if ((v - m) / sd < 4) continue;
+        let isMax = true;
+        for (let ey = -2; ey <= 2 && isMax; ey++) for (let ex = -2; ex <= 2; ex++) if ((ex || ey) && at(dx + ex, dy + ey) > v) { isMax = false; break; }
+        if (!isMax) continue;
+        // 抛物线插值求亚像素峰位
+        const fx = at(dx - 1, dy), gx = at(dx + 1, dy), fy = at(dx, dy - 1), gy = at(dx, dy + 1);
+        const ddx = (fx - 2 * v + gx) < 0 ? 0.5 * (fx - gx) / (fx - 2 * v + gx) : 0;
+        const ddy = (fy - 2 * v + gy) < 0 ? 0.5 * (fy - gy) / (fy - 2 * v + gy) : 0;
+        pk.push({ z: (v - m) / sd, x: dx + Math.max(-.5, Math.min(.5, ddx)), y: dy + Math.max(-.5, Math.min(.5, ddy)) });
+    }
+    pk.sort((a, b) => b.z - a.z);
+    const out = [];
+    const add = (p, th) => {
+        th = th - Math.round(th / (Math.PI / 2)) * (Math.PI / 2);
+        if (p < 40 || (Math.abs(th) < 0.004 && Math.abs(p - L2_T) < 1)) return; // 不转不缩的情况前面已经试过
+        if (Math.abs(th) < 0.004) th = 0;
+        if (!out.some(([a, b]) => Math.abs(a - p) < 1 && Math.abs(b - th) < 0.004)) out.push([p, th]);
+    };
+    for (const k of pk.slice(0, 6)) {
+        const r = Math.hypot(k.x, k.y), th = Math.atan2(k.y, k.x);
+        for (const d of [1, 2, 3]) add(r / d, th);           // 晶格基向量（或其倍数）
+        add(r / Math.SQRT2, th - Math.PI / 4);                // 对角向量
+    }
+    return out.slice(0, 16);
 }
 /** 二面体变换（翻转/转 90°）作用在折叠后的图块上 */
 function l2Dihedral(T, k) {
@@ -1323,8 +1381,8 @@ function l2DecodeAt(T, seed, dx, dy) {
     return new TextDecoder("utf-8", { fatal: false }).decode(by.subarray(0, end));
 }
 /** 在一组周期上试：同步峰够强才解码；ks 为要试的翻转/旋转 */
-function l2TryAt(R, w, h, px, py, seed, ks, minZ) {
-    const T0 = l2Fold(R, w, h, px, py);
+function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta) {
+    const T0 = l2Fold(R, w, h, px, py, theta);
     let best = { z: 0 };
     for (const k of ks) {
         const T = l2Dihedral(T0, k);
@@ -1333,7 +1391,7 @@ function l2TryAt(R, w, h, px, py, seed, ks, minZ) {
         for (const pk of top) {
             if (pk.z < minZ) break;
             const text = l2DecodeAt(T, seed, pk.dx, pk.dy);
-            if (text !== null) return { hit: { text, z: pk.z, px, py, k } };
+            if (text !== null) return { hit: { text, z: pk.z, px, py, k, angle: theta ? +(theta * 180 / Math.PI).toFixed(2) : 0 } };
         }
     }
     return { best };
@@ -1350,6 +1408,23 @@ function l2Extract(rgba, w, h, seed, onProgress) {
     for (const b of pys) add(b, b);
     const all = [0, 1, 2, 3, 4, 5, 6, 7];
     let t = 0;
+    {
+        const r0 = l2TryAt(R, w, h, L2_T, L2_T, seed, all, 5);
+        if (r0.hit) return r0.hit;
+    }
+    // 任意角度旋转：从自相关峰估计网格角度，再按旋转网格折叠
+    for (const [p, th] of l2RotCands(R, w, h)) {
+        if (onProgress) onProgress(++t);
+        const r = l2TryAt(R, w, h, p, p, seed, all, 5, th);
+        if (r.hit) return r.hit;
+        if (r.best.z >= 5) {
+            for (const ea of [-0.0025, 0, 0.0025]) for (const ep of [-0.003, 0, 0.003]) {
+                if (!ea && !ep) continue;
+                const q = l2TryAt(R, w, h, p * (1 + ep), p * (1 + ep), seed, [r.best.k], 4.5, th + ea);
+                if (q.hit) return q.hit;
+            }
+        }
+    }
     for (const [px, py] of tries) {
         if (onProgress) onProgress(++t);
         const r = l2TryAt(R, w, h, px, py, seed, all, 5);
@@ -1573,7 +1648,7 @@ document.getElementById("extract-btn").onclick=async (e)=>{
     document.getElementById("extract-text").textContent=l2?(l2.text||"（空）"):(full.text||"（空）");
     const scale=l2?Math.round(12800/((l2.px+l2.py)/2))/100:1;
     const kn=["","（已翻转）","（已翻转）","（已转 180°）","（已转 90°）","（已转 90°）","（已转 90°）","（已转 90°）"];
-    st.textContent=l2?`抗截图层校验通过 · 相对原图约 ${Math.round(100/scale)}% 大小${kn[l2.k]||""}`:"完整文本层校验通过";
+    st.textContent=l2?`抗截图层校验通过 · 相对原图约 ${Math.round(100/scale)}% 大小${kn[l2.k]||""}${l2.angle?`（已校正 ${Math.abs(l2.angle)}° 旋转）`:""}`:"完整文本层校验通过";
     document.getElementById("extract-full").textContent=full&&l2?("完整文本：" + full.text):(l2?"完整文本层读不出（图片被裁切或缩放过），以上为前 16 字节。":"");
     document.getElementById("extract-out").classList.remove("hidden");
   }catch(err){ toast(err.message||"提取失败"); }
