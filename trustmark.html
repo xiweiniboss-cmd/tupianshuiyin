@@ -11,118 +11,164 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet"/>
 <style>
 :root {
-  --bg:#F3EEE4; --elev:#FAF7F1; --subtle:#EBE4D6; --fg:#1A1714;
-  --muted:#7A7268; --subtle-fg:#A39B90; --accent:#B43A32; --accent-fg:#F3EEE4;
-  --border:#D9D1C4; --ring:#B43A32;
-  --sans:"Noto Sans SC","Segoe UI",system-ui,sans-serif;
+  --bg:#F3EEE4; --elev:#FBF9F4; --subtle:#E9E1D3; --track:#E3DACA; --fg:#1A1714;
+  --muted:#6E665C; --subtle-fg:#968E83; --accent:#B43A32; --accent-hover:#9C2F28; --accent-fg:#FBF9F4;
+  --accent-soft:rgba(180,58,50,.08); --border:#D6CDBE; --line:rgba(26,23,20,.09); --ring:#B43A32;
+  --sans:"Noto Sans SC","PingFang SC","Segoe UI",system-ui,sans-serif;
   --display:"Noto Serif SC","Songti SC",serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
-  --shadow:0 0 0 1px rgba(26,23,20,.06),0 1px 2px -1px rgba(26,23,20,.06),0 2px 4px 0 rgba(26,23,20,.04);
+  --shadow:0 1px 2px rgba(26,23,20,.06),0 0 0 1px rgba(26,23,20,.06);
+  --ease:cubic-bezier(.2,.7,.2,1);
 }
 * { box-sizing:border-box; }
 html,body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
-body {
-  min-height:100dvh;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(180,58,50,.06), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(26,23,20,.04), transparent 45%);
-}
+body { min-height:100dvh; }
 button { font-family:inherit; cursor:pointer; }
-button:disabled { cursor:not-allowed; opacity:.4; }
+button:disabled { cursor:not-allowed; opacity:.45; }
 input, textarea { font-family:inherit; }
-h1 { font-family:var(--display); font-weight:500; letter-spacing:-.03em; text-wrap:balance; }
-.wrap { max-width:960px; margin:0 auto; padding:0 20px; }
-header { border-bottom:1px solid color-mix(in oklab, var(--border) 80%, transparent); }
-.nav { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; }
-.brand { display:flex; align-items:center; gap:12px; }
-.brand h2 { font-family:var(--display); font-size:20px; margin:0; font-weight:500; }
+:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+h1 { font-family:var(--display); font-weight:500; text-wrap:balance; }
+.wrap { max-width:1040px; margin:0 auto; padding:0 24px; }
+header { border-bottom:1px solid var(--line); background:var(--bg); }
+.nav { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; flex-wrap:wrap; }
+.brand { display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; }
+.brand h2 { font-family:var(--display); font-size:20px; margin:0; font-weight:500; line-height:1.2; }
 .brand p { margin:0; font-size:12px; color:var(--muted); }
-.hero { padding:40px 0 24px; max-width:640px; }
-.hero h1 { font-size:clamp(28px,5vw,40px); margin:0; line-height:1.15; }
+.ver { display:flex; gap:2px; padding:3px; background:var(--track); border-radius:12px; }
+.ver a { height:32px; padding:0 12px; display:inline-flex; align-items:center; border-radius:9px; font-size:13px; font-weight:500;
+  color:var(--muted); text-decoration:none; white-space:nowrap; transition:background-color .15s var(--ease),color .15s var(--ease); }
+.ver a:hover { color:var(--fg); background:rgba(251,249,244,.6); }
+.ver a.cur { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
+@media (max-width:640px){ .ver { width:100%; } .ver a { flex:1; justify-content:center; padding:0 6px; } }
+.hero { padding:40px 0 28px; max-width:680px; }
+.hero h1 { font-size:clamp(30px,5vw,40px); margin:0; line-height:1.15; letter-spacing:-.01em; }
 .hero h1 span { color:var(--accent); }
-.hero p { color:var(--muted); line-height:1.6; margin:12px 0 0; }
-.pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-.pill { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
-.pill.on { background:rgba(180,58,50,.12); color:var(--accent); border-color:transparent; }
-.tabs { display:flex; gap:4px; background:var(--subtle); padding:4px; border-radius:16px; max-width:420px; }
-.tabs button { flex:1; height:36px; border:0; background:transparent; border-radius:12px; color:var(--muted); font-size:14px; font-weight:500; }
+.hero p { color:var(--muted); line-height:1.7; margin:12px 0 0; font-size:15px; }
+.pills { display:none; }
+.tabs { display:flex; gap:4px; background:var(--track); padding:4px; border-radius:14px; max-width:480px; }
+.tabs button { flex:1; height:44px; border:0; background:transparent; border-radius:10px; color:var(--muted); font-size:15px; font-weight:500;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px; transition:background-color .15s var(--ease),color .15s var(--ease); }
+.tabs button::before { content:""; width:18px; height:18px; background:currentColor; -webkit-mask:var(--ic) center/contain no-repeat; mask:var(--ic) center/contain no-repeat; }
+.tabs button[data-tab=embed] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2020h9%22/%3E%3Cpath%20d%3D%22M16.376%203.622a1%201%200%200%201%203.002%203.002L7.368%2018.635a2%202%200%200%201-.855.506l-2.872.838a.5.5%200%200%201-.62-.62l.838-2.872a2%202%200%200%201%20.506-.854z%22/%3E%3C/svg%3E"); }
+.tabs button[data-tab=extract] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207V5a2%202%200%200%201%202-2h2%22/%3E%3Cpath%20d%3D%22M17%203h2a2%202%200%200%201%202%202v2%22/%3E%3Cpath%20d%3D%22M21%2017v2a2%202%200%200%201-2%202h-2%22/%3E%3Cpath%20d%3D%22M7%2021H5a2%202%200%200%201-2-2v-2%22/%3E%3Cpath%20d%3D%22M7%2012h10%22/%3E%3C/svg%3E"); }
+.tabs button[data-tab=about] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%207v14%22/%3E%3Cpath%20d%3D%22M3%2018a1%201%200%200%201-1-1V4a1%201%200%200%201%201-1h5a4%204%200%200%201%204%204%204%204%200%200%201%204-4h5a1%201%200%200%201%201%201v13a1%201%200%200%201-1%201h-6a3%203%200%200%200-3%203%203%203%200%200%200-3-3z%22/%3E%3C/svg%3E"); }
+.tabs button:hover { color:var(--fg); }
 .tabs button.active { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
-.grid { display:grid; gap:32px; margin-top:28px; }
-@media (min-width:860px){ .grid { grid-template-columns:1.1fr .9fr; } }
+.tabs button.active::before { background:var(--accent); }
+.grid { display:grid; gap:32px; margin-top:32px; }
+@media (min-width:860px){ .grid { grid-template-columns:1.1fr .9fr; align-items:start; } }
+.step { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:500; margin:0 0 12px; }
+.step .no { width:22px; height:22px; flex:none; display:inline-grid; place-items:center; border:1.5px solid var(--accent); color:var(--accent);
+  border-radius:4px; font:500 12px/1 var(--mono); font-style:normal; }
+.step .hint { margin-left:auto; font-weight:400; }
 .drop {
-  min-height:220px; border-radius:16px; background:var(--elev); box-shadow:var(--shadow);
+  min-height:260px; border-radius:16px; background:var(--elev); border:1.5px dashed var(--border);
   display:flex; align-items:center; justify-content:center; text-align:center; position:relative; overflow:hidden;
+  transition:border-color .15s var(--ease),background-color .15s var(--ease);
 }
+.drop:hover, .drop:focus-within { border-color:var(--accent); background:#FDFBF7; }
 .drop img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:
-  repeating-conic-gradient(#e7e0d4 0 8px,#f3eee4 8px 16px); }
-.drop .ph { padding:24px; color:var(--muted); font-size:14px; }
-.drop .ph small { display:block; margin-top:6px; color:var(--subtle-fg); font-size:12px; }
-.lbl { font-size:14px; font-weight:500; display:flex; justify-content:space-between; }
-.hint { font-size:12px; color:var(--subtle-fg); }
-label.stack { display:flex; flex-direction:column; gap:8px; }
+  repeating-conic-gradient(#e9e2d6 0 8px,#f5f0e7 8px 16px) 0 0/16px 16px; z-index:1; }
+.drop:has(img) { border-style:solid; border-color:var(--line); }
+.drop .file { z-index:2; }
+.drop .ph { padding:24px; color:var(--fg); font-size:15px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.drop .ph .up { color:var(--accent); margin-bottom:8px; }
+.drop .ph .pick { margin-top:14px; height:36px; padding:0 16px; display:inline-flex; align-items:center; border-radius:10px;
+  background:var(--fg); color:var(--bg); font-size:13px; font-weight:500; }
+.drop .ph small { display:block; margin-top:2px; color:var(--subtle-fg); font-size:12px; }
+.lbl { font-size:14px; font-weight:500; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.hint { font-size:12px; color:var(--subtle-fg); line-height:1.6; font-weight:400; }
+label.stack { display:flex; flex-direction:column; gap:8px; font-size:14px; font-weight:500; }
 textarea, input[type=text] {
-  width:100%; border:1px solid var(--border); background:var(--elev); border-radius:12px;
-  padding:10px 12px; font-size:14px; color:var(--fg); box-shadow:var(--shadow);
+  width:100%; border:1px solid var(--border); background:var(--elev); border-radius:10px;
+  padding:11px 12px; font-size:15px; color:var(--fg); font-weight:400;
+  transition:border-color .15s var(--ease),box-shadow .15s var(--ease);
 }
-textarea { min-height:110px; resize:vertical; }
-textarea:focus, input:focus { outline:2px solid color-mix(in oklab, var(--ring) 50%, transparent); outline-offset:1px; }
-.row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+input[type=text] { height:44px; }
+textarea { min-height:96px; resize:vertical; line-height:1.6; }
+textarea:hover, input[type=text]:hover { border-color:#C4B9A8; }
+textarea:focus, input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.row3 { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; padding:4px; background:var(--track); border-radius:12px; }
 .row3 button {
-  height:44px; border:0; border-radius:12px; background:var(--elev); color:var(--muted); box-shadow:var(--shadow); font-size:14px;
+  height:36px; border:0; border-radius:9px; background:transparent; color:var(--muted); font-size:14px; font-weight:500;
+  transition:background-color .15s var(--ease),color .15s var(--ease);
 }
-.row3 button.on { background:var(--fg); color:var(--bg); box-shadow:none; }
+.row3 button:hover { color:var(--fg); }
+.row3 button.on { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
 .switch-row {
-  display:flex; justify-content:space-between; align-items:center; gap:12px;
-  background:var(--elev); border-radius:16px; padding:10px 12px; box-shadow:var(--shadow);
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  background:transparent; border:1px solid var(--line); border-radius:12px; padding:12px 14px; cursor:pointer;
 }
-.actions { display:flex; flex-wrap:wrap; gap:8px; }
+input[type=checkbox] { appearance:none; -webkit-appearance:none; flex:none; width:40px; height:24px; border-radius:12px; margin:0;
+  background:#CFC5B5; position:relative; cursor:pointer; transition:background-color .15s var(--ease); }
+input[type=checkbox]::after { content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:9px; background:#fff;
+  box-shadow:0 1px 2px rgba(26,23,20,.2); transition:transform .15s var(--ease); }
+input[type=checkbox]:checked { background:var(--accent); }
+input[type=checkbox]:checked::after { transform:translateX(16px); }
+input[type=range] { accent-color:var(--accent); width:100%; }
+.actions { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:4px; }
 .btn {
-  height:44px; padding:0 16px; border:0; border-radius:12px; background:var(--accent); color:var(--accent-fg);
-  font-size:14px; font-weight:500; display:inline-flex; align-items:center; gap:8px;
+  height:48px; padding:0 20px; border:0; border-radius:12px; background:var(--accent); color:var(--accent-fg);
+  font-size:15px; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
+  transition:background-color .15s var(--ease),transform .1s var(--ease);
 }
-.btn.sec { background:var(--elev); color:var(--fg); box-shadow:var(--shadow); }
-.btn.ghost { background:transparent; color:var(--muted); }
-.result {
-  margin-top:32px; display:grid; gap:20px;
-}
-@media (min-width:860px){ .result { grid-template-columns:1.1fr .9fr; } }
+.btn:hover { background:var(--accent-hover); }
+.btn:active { transform:scale(.98); }
+.btn[data-ic]::before { content:""; width:18px; height:18px; flex:none; background:currentColor; -webkit-mask:var(--ic) center/contain no-repeat; mask:var(--ic) center/contain no-repeat; }
+.btn[data-ic=stamp] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%2022h14%22/%3E%3Cpath%20d%3D%22M19.27%2013.73A2.5%202.5%200%200%200%2017.5%2013h-11A2.5%202.5%200%200%200%204%2015.5V17a1%201%200%200%200%201%201h14a1%201%200%200%200%201-1v-1.5c0-.66-.26-1.3-.73-1.77Z%22/%3E%3Cpath%20d%3D%22M14%2013V8.5C14%207%2015%207%2015%205a3%203%200%200%200-6%200c0%202%201%202%201%203.5V13%22/%3E%3C/svg%3E"); } .btn[data-ic=search] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22/%3E%3Cpath%20d%3D%22m21%2021-4.3-4.3%22/%3E%3C/svg%3E"); } .btn[data-ic=download] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%2015v4a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2v-4%22/%3E%3Cpath%20d%3D%22m7%2010%205%205%205-5%22/%3E%3Cpath%20d%3D%22M12%2015V3%22/%3E%3C/svg%3E"); }
+.btn[data-ic=image] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22/%3E%3Ccircle%20cx%3D%229%22%20cy%3D%229%22%20r%3D%222%22/%3E%3Cpath%20d%3D%22m21%2015-3.086-3.086a2%202%200%200%200-2.828%200L6%2021%22/%3E%3C/svg%3E"); } .btn[data-ic=cpu] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%202v4%22/%3E%3Cpath%20d%3D%22m16.2%207.8%202.9-2.9%22/%3E%3Cpath%20d%3D%22M18%2012h4%22/%3E%3Cpath%20d%3D%22m16.2%2016.2%202.9%202.9%22/%3E%3Cpath%20d%3D%22M12%2018v4%22/%3E%3Cpath%20d%3D%22m4.9%2019.1%202.9-2.9%22/%3E%3Cpath%20d%3D%22M2%2012h4%22/%3E%3Cpath%20d%3D%22m4.9%204.9%202.9%202.9%22/%3E%3C/svg%3E"); } .btn[data-ic=copy] { --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2214%22%20height%3D%2214%22%20x%3D%228%22%20y%3D%228%22%20rx%3D%222%22/%3E%3Cpath%20d%3D%22M4%2016c-1.1%200-2-.9-2-2V4c0-1.1.9-2%202-2h10c1.1%200%202%20.9%202%202%22/%3E%3C/svg%3E"); }
+.btn.block { width:100%; }
+.btn.sec { background:var(--elev); color:var(--fg); box-shadow:inset 0 0 0 1px var(--border); }
+.btn.sec:hover { background:#fff; box-shadow:inset 0 0 0 1px #C4B9A8; }
+.btn.dark { background:var(--fg); color:var(--bg); }
+.btn.dark:hover { background:#36302A; }
+.btn.ghost { height:32px; padding:0 10px; font-size:13px; background:transparent; color:var(--muted); box-shadow:inset 0 0 0 1px var(--border); border-radius:8px; gap:6px; }
+.btn.ghost::before { width:14px; height:14px; }
+.btn.ghost:hover { background:var(--elev); color:var(--fg); }
+.result { margin-top:32px; display:grid; gap:24px; }
+@media (min-width:860px){ .result { grid-template-columns:1.1fr .9fr; align-items:start; } }
 .compare { position:relative; border-radius:16px; overflow:hidden; background:var(--subtle); box-shadow:var(--shadow); }
 .compare img { display:block; width:100%; }
 .compare .before { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
-.panel { background:var(--elev); border-radius:24px; padding:20px; box-shadow:var(--shadow); }
-.panel h3 { font-family:var(--display); margin:0 0 8px; font-weight:500; }
-.meta { display:flex; justify-content:space-between; align-items:center; background:var(--subtle); border-radius:12px; padding:10px 12px; }
-.meta b { font-family:var(--mono); font-size:20px; font-variant-numeric:tabular-nums; }
-.about { max-width:640px; color:var(--muted); line-height:1.7; font-size:14px; }
-.about a { color:var(--fg); }
-footer { border-top:1px solid color-mix(in oklab, var(--border) 80%, transparent); margin-top:48px; }
-footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.compare::after { content:"左原图 · 右已写入 · 拖动对比"; position:absolute; left:12px; top:12px; padding:4px 8px; border-radius:6px;
+  background:rgba(26,23,20,.7); color:#F3EEE4; font-size:12px; pointer-events:none; }
+.panel { background:var(--elev); border-radius:16px; padding:20px; box-shadow:var(--shadow); }
+.panel h3 { font-family:var(--display); margin:0 0 8px; font-weight:500; font-size:20px; }
+.panel h3::before { content:""; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:10px; vertical-align:2px; background:var(--accent); }
+.meta { display:flex; justify-content:space-between; align-items:center; gap:12px; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-top:12px; }
+.meta b { font-family:var(--mono); font-size:18px; font-weight:500; font-variant-numeric:tabular-nums; word-break:break-all; }
+.status { min-height:20px; }
+#extract-out { border-left:3px solid var(--accent); }
+#extract-text { font-size:18px !important; color:var(--fg); }
+.about { max-width:680px; color:var(--muted); line-height:1.8; font-size:15px; margin-top:32px; }
+.about b { color:var(--fg); font-weight:500; }
+.about a { color:var(--accent); }
+footer { border-top:1px solid var(--line); margin-top:64px; }
+footer .wrap { padding:20px 24px; font-size:12px; color:var(--subtle-fg); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .toast {
-  position:fixed; top:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg);
-  padding:8px 14px; border-radius:999px; font-size:13px; opacity:0; pointer-events:none; transition:opacity .2s;
+  position:fixed; top:16px; left:50%; transform:translate(-50%,-4px); background:var(--fg); color:var(--bg);
+  padding:10px 16px; border-radius:10px; font-size:14px; opacity:0; pointer-events:none; transition:opacity .2s var(--ease),transform .2s var(--ease);
   z-index:20;
 }
-.toast.show { opacity:1; }
+.toast.show { opacity:1; transform:translate(-50%,0); }
 .hidden { display:none !important; }
-input[type=range] { accent-color:var(--accent); }
-.file { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.file { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+#model-panel { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+#model-panel .mtxt { flex:1; min-width:240px; }
 </style>
 </head>
 <body>
 <div class="toast" id="toast"></div>
 <header><div class="wrap nav">
-  <div class="brand">
+  <a class="brand" href="./index.html" aria-label="隐印首页">
     <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">
       <rect x="3" y="3" width="58" height="58" rx="4" fill="none" stroke="#B43A32" stroke-width="3"/>
       <rect x="9" y="9" width="46" height="46" rx="2" fill="none" stroke="#B43A32" stroke-width="1.4"/>
       <path d="M22 18h20M32 18v28M22 46h20M20 28c6 8 18 8 24 0" fill="none" stroke="#B43A32" stroke-width="2.4" stroke-linecap="square"/>
     </svg>
     <div><h2>隐印</h2><p>TrustMark 神经网络水印</p></div>
-  </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <a class="btn ghost" href="./kangjietu.html" style="text-decoration:none">抗截图版</a>
-    <a class="btn ghost" href="./index.html" style="text-decoration:none">普通版</a>
-  </div>
+  </a>
+  <nav class="ver" aria-label="版本"><a href="./index.html">普通版</a><a href="./kangjietu.html">抗截图版</a><a href="./trustmark.html" class="cur" aria-current="page">TrustMark 版</a></nav>
 </div></header>
 <main class="wrap">
   <section class="hero">
@@ -131,13 +177,12 @@ input[type=range] { accent-color:var(--accent); }
     <div class="pills"><span class="pill on">抗压缩</span><span class="pill">抗小角度旋转</span><span class="pill">C2PA 标准</span><span class="pill">本地运算</span></div>
   </section>
   <div class="panel" id="model-panel" style="margin-bottom:20px">
-    <div class="lbl"><span>模型</span><span class="hint" id="model-state">未加载</span></div>
-    <p class="hint" style="margin:8px 0 0">首次使用要从 Adobe 的服务器下载约 64 MB（编码器 17 MB、解码器 47 MB），之后浏览器会缓存。</p>
-    <div style="height:8px"></div>
-    <button type="button" class="btn sec" id="load-btn">加载模型</button>
+    <div class="mtxt"><div class="lbl" style="justify-content:flex-start"><span>先加载模型</span><span class="hint" id="model-state">未加载</span></div>
+    <p class="hint" style="margin:4px 0 0">首次使用要从 Adobe 的服务器下载约 64 MB（编码器 17 MB、解码器 47 MB），之后浏览器会缓存。</p></div>
+    <button type="button" class="btn dark" data-ic="cpu" id="load-btn">加载模型</button>
   </div>
   <div class="tabs" role="tablist">
-    <button type="button" class="active" data-tab="embed">嵌入</button>
+    <button type="button" class="active" data-tab="embed">写入</button>
     <button type="button" data-tab="extract">提取</button>
     <button type="button" data-tab="about">原理</button>
   </div>
@@ -145,13 +190,14 @@ input[type=range] { accent-color:var(--accent); }
   <section id="tab-embed">
     <div class="grid">
       <div>
-        <div class="lbl" style="margin-bottom:8px"><span>原图</span><span class="hint" id="src-hint"></span></div>
+        <div class="step"><i class="no">1</i><span>选一张图</span><span class="hint" id="src-hint"></span></div>
         <div class="drop" id="src-drop">
-          <div class="ph">拖入、点选或粘贴图片<small>PNG / JPEG / WebP · 任意尺寸</small></div>
+          <div class="ph"><svg class="up" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>拖入或粘贴图片<small>PNG / JPEG / WebP · 任意尺寸</small><span class="pick">选择图片</span></div>
           <input class="file" id="src-file" type="file" accept="image/*"/>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="step" style="margin:0"><i class="no">2</i><span>写什么、怎么写</span></div>
         <div>
           <div class="lbl" style="margin-bottom:8px">格式</div>
           <div class="row3" id="mode" style="grid-template-columns:1fr 1fr">
@@ -171,10 +217,10 @@ input[type=range] { accent-color:var(--accent); }
           <input type="range" id="strength" min="0.6" max="1.6" step="0.1" value="1.0" style="padding:0;box-shadow:none;border:0;background:transparent"/>
         </label>
         <div class="actions">
-          <button type="button" class="btn" id="embed-btn">写入水印</button>
-          <button type="button" class="btn sec" id="sample-btn">试用样张</button>
+          <button type="button" class="btn" data-ic="stamp" id="embed-btn">写入水印</button>
+          <button type="button" class="btn sec" data-ic="image" id="sample-btn">试用样张</button>
         </div>
-        <p class="hint" id="em-status" style="margin:0"></p>
+        <p class="hint status" id="em-status" style="margin:0"></p>
       </div>
     </div>
     <div class="result hidden" id="embed-result">
@@ -184,7 +230,7 @@ input[type=range] { accent-color:var(--accent); }
         <div class="meta"><div><div class="hint">实际写入</div><b id="kept-out"></b></div>
           <div style="text-align:right"><div class="hint">PSNR</div><b id="psnr-out"></b></div></div>
         <div style="height:12px"></div>
-        <button type="button" class="btn" id="dl-btn">下载 PNG</button>
+        <button type="button" class="btn block" data-ic="download" id="dl-btn">下载 PNG</button>
       </div>
     </div>
   </section>
@@ -192,24 +238,25 @@ input[type=range] { accent-color:var(--accent); }
   <section id="tab-extract" class="hidden">
     <div class="grid">
       <div>
-        <div class="lbl" style="margin-bottom:8px"><span>带水印的图</span><span class="hint" id="ex-hint"></span></div>
+        <div class="step"><i class="no">1</i><span>放入要检查的图</span><span class="hint" id="ex-hint"></span></div>
         <div class="drop" id="ex-drop">
-          <div class="ph">拖入要提取的图片</div>
+          <div class="ph"><svg class="up" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>拖入或粘贴要检查的图片<small>截图、压缩过的也可以</small><span class="pick">选择图片</span></div>
           <input class="file" id="ex-file" type="file" accept="image/*"/>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="step" style="margin:0"><i class="no">2</i><span>填密钥，开始提取</span></div>
         <label class="stack">密钥
           <input type="text" id="ex-password" value="" autocomplete="off" placeholder="写入时用的密钥（Adobe 标准文本不需要）"/>
         </label>
-        <div class="switch-row">
+        <label class="switch-row">
           <div><div style="font-size:14px;font-weight:500">深度找回</div><div class="hint">再试翻转、90° 倍数和 ±30° 旋转，最多约 100 次推理</div></div>
           <input type="checkbox" id="ex-deep" checked/>
-        </div>
-        <button type="button" class="btn" id="extract-btn">提取水印</button>
-        <p class="hint" id="ex-status" style="margin:0"></p>
+        </label>
+        <button type="button" class="btn block" data-ic="search" id="extract-btn">提取水印</button>
+        <p class="hint status" id="ex-status" style="margin:0"></p>
         <div class="panel hidden" id="extract-out">
-          <div class="lbl">提取结果 <button type="button" class="btn ghost" id="copy-text">复制</button></div>
+          <div class="lbl">提取结果 <button type="button" class="btn ghost" data-ic="copy" id="copy-text">复制</button></div>
           <p id="extract-text" style="font-family:var(--mono);font-size:14px;line-height:1.6;word-break:break-word;margin:8px 0 0"></p>
           <p class="hint" id="extract-note" style="margin:8px 0 0"></p>
         </div>
