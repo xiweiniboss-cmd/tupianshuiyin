@@ -238,10 +238,10 @@ footer .wrap { padding:20px; font-size:12px; color:var(--subtle-fg); display:fle
   <section id="tab-about" class="hidden about">
     <p>水印仍是“魔数 + 长度 + 文本 + CRC32”的帧，外面再加一层纠错码。提取不需要原图，只需要对上密钥和强度。</p>
     <p>新写入的图把这一帧藏在亮度的低频里：每个 16×16 小块的平均亮度被轻轻推到一个量化格上，块与块之间用平滑过渡，避免出现硬边格子。直接读不对时，深度找回会估计裁切、缩放、翻转和大约 ±28° 的旋转，把格子对回去再读。</p>
-    <p>按一张 1200×500 左右的照片、强度选「标准」来记：原图、常见缩放、JPEG 质量 50，以及质量大约 20（文件压到两万字节左右）可以校验通过。四边各裁掉约一成再缩放、水平翻转、90° 和大约 15° 的旋转，打开深度找回后也能对上。质量大约 10（文件再小一半）在「标准」下经常失败，要选「强」。</p>
+    <p>按一张 1200×500 左右、本身有纹理的照片、强度选「标准」来记：原图、常见缩放、JPEG 质量 50，以及质量大约 20（文件压到两万字节左右）可以校验通过。水平翻转和 90° 旋转，打开深度找回后可以对上。带白边扩出来的大约 15° 旋转、截图缩到大约三分之二，填上原图尺寸后也能对上。四边各裁掉约一成再缩放，以及转完按原框裁掉四角的小角度旋转，在大片平坦区域的图上经常解不开。质量大约 10（文件再小一半）在「标准」下经常失败，要选「强」。</p>
     <p>「强」把量化格拉大，平坦的天空里可能看出轻微起伏。请用对比滑块看过再发出去。「轻」更不容易看出来，也更不扛压缩。</p>
     <p>用同一套方法再写一遍，会换掉这一次写入的字。如果图里已经能提出水印，写入前会先请你确认。旧版（只做 DWT-DCT-SVD 的图）仍按原来的参数提取，不用重嵌。</p>
-    <p>仍然困难的：对屏拍照的透视、每边裁掉超过大约两成、以及缩到只剩一小块。密钥只打乱位置，不是加密。不要把真正的机密写进水印。计算都在你的设备上完成，图片不会上传。</p>
+    <p>仍然困难的：对屏拍照的透视、每边裁掉约一成及以上（尤其是平坦区域多的图）、同画布小角度旋转、以及缩到只剩一小块。密钥只打乱位置，不是加密。不要把真正的机密写进水印。计算都在你的设备上完成，图片不会上传。</p>
     <p style="font-size:12px">原库 MIT License。把本 HTML 放到任意静态空间即可部署。</p>
   </section>
 </main>
@@ -1622,11 +1622,11 @@ function searchV3(img, opt) {
   const tryMap = (W, H, map) => v3Try(rgba, w, h, W, H, password, step, parity, map);
   // 翻转 / 90°
   const orients = [
-    ["水平翻转", (W, H) => (x, y) => [W - x, y]],
-    ["垂直翻转", (W, H) => (x, y) => [x, H - y]],
-    ["旋转 180°", (W, H) => (x, y) => [W - x, H - y]],
-    ["旋转 90°", (W, H) => (x, y) => [y, W - x]],
-    ["旋转 270°", (W, H) => (x, y) => [H - y, x]],
+    ["水平翻转", (W, H) => (x, y) => [W - 1 - x, y]],
+    ["垂直翻转", (W, H) => (x, y) => [x, H - 1 - y]],
+    ["旋转 180°", (W, H) => (x, y) => [W - 1 - x, H - 1 - y]],
+    ["旋转 90°", (W, H) => (x, y) => [y, W - 1 - x]],
+    ["旋转 270°", (W, H) => (x, y) => [H - 1 - y, x]],
   ];
   for (const [name, make] of orients) {
     const W = name.includes("90") || name.includes("270") ? h : w;
@@ -1639,7 +1639,7 @@ function searchV3(img, opt) {
   const sizes = [[baseW, baseH]];
   if (!known) {
     // 不知道原尺寸时，按当前宽高比猜几个缩放
-    for (const s of [0.5, 0.67, 0.75, 0.8, 1.25, 1.5, 2]) {
+    for (const s of [0.5, 2 / 3, 0.67, 0.75, 0.8, 1.25, 1.5, 2]) {
       let W = Math.round(w / s), H = Math.round(h / s);
       W -= W % 2; H -= H % 2;
       if (W >= 64 && H >= 64 && W <= 2000 && H <= 2000) sizes.push([W, H]);
@@ -1689,45 +1689,54 @@ function searchV3(img, opt) {
     if (area < box * 0.45 || area > box * 1.02) return null;
     return [W, H];
   };
-  let bestA = null;
+  const scoreAt = (th, W0, H0) => {
+    const cx = (W0 - 1) / 2, cy = (H0 - 1) / 2, acx = (w - 1) / 2, acy = (h - 1) / 2;
+    const rad = th * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+    const map = (x, y) => {
+      const dx = x - cx, dy = y - cy;
+      return [acx + co * dx - si * dy, acy + si * dx + co * dy];
+    };
+    return v3Score(rgba, w, h, W0, H0, password, step, map);
+  };
+  const consider = (best, s, th, W0, H0) => (!best || s < best.s) ? { s, th, W0, H0 } : best;
+  let bestImp = null, bestSame = null;
   for (let th = -28; th <= 28; th += 1) {
-    const cands = [];
-    if (known) cands.push([baseW, baseH]);
+    if (known) bestImp = consider(bestImp, scoreAt(th, baseW, baseH), th, baseW, baseH);
     const imp = impliedWH(th);
-    if (imp) cands.push(imp);
-    // 同画布旋转（转完按原框裁掉四角）：原尺寸就是当前尺寸
-    if (!known) cands.push([w, h]);
-    for (const [W0, H0] of cands) {
-      const cx = (W0 - 1) / 2, cy = (H0 - 1) / 2, acx = (w - 1) / 2, acy = (h - 1) / 2;
-      const rad = th * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
-      const map = (x, y) => {
-        const dx = x - cx, dy = y - cy;
-        return [acx + co * dx - si * dy, acy + si * dx + co * dy];
-      };
-      const s = v3Score(rgba, w, h, W0, H0, password, step, map);
-      if (!bestA || s < bestA.s) bestA = { s, th, W0, H0 };
+    if (imp && (!known || imp[0] !== baseW || imp[1] !== baseH)) {
+      bestImp = consider(bestImp, scoreAt(th, imp[0], imp[1]), th, imp[0], imp[1]);
     }
+    // 同画布旋转（转完按原框裁掉四角）单独记分，避免把带白边扩出来的正确尺寸挤掉
+    if (!known) bestSame = consider(bestSame, scoreAt(th, w, h), th, w, h);
   }
-  if (bestA && bestA.s < 0.08) {
-    const sizes = [];
-    const push = (W0, H0) => { if (W0 >= 64 && H0 >= 64 && !sizes.some((p) => p[0] === W0 && p[1] === H0)) sizes.push([W0, H0]); };
-    push(bestA.W0, bestA.H0);
-    for (let dw = -2; dw <= 2; dw += 2) for (let dh = -2; dh <= 2; dh += 2) push(bestA.W0 + dw, bestA.H0 + dh);
-    for (const [W0, H0] of sizes) {
-      const cx = (W0 - 1) / 2, cy = (H0 - 1) / 2, acx = (w - 1) / 2, acy = (h - 1) / 2;
-      for (let th = bestA.th - 0.5; th <= bestA.th + 0.5 + 1e-6; th += 0.5) {
-        const rad = th * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
-        for (const ph of [0, 0.5]) {
-          const map = (x, y) => {
-            const dx = x - cx, dy = y - cy;
-            return [acx + co * dx - si * dy + ph, acy + si * dx + co * dy + ph];
-          };
-          const t = tryMap(W0, H0, map);
-          if (t !== null) return { text: t, note: `已按约 ${Math.abs(Math.round(th))}° 旋转还原` };
+  const refine = (pick) => {
+    if (!pick || pick.s >= 0.12) return null;
+    const picks = [pick];
+    if (pick.th) picks.push({ s: pick.s, th: -pick.th, W0: pick.W0, H0: pick.H0 });
+    for (const one of picks) {
+      const sizes = [];
+      const push = (W0, H0) => { if (W0 >= 64 && H0 >= 64 && !sizes.some((p) => p[0] === W0 && p[1] === H0)) sizes.push([W0, H0]); };
+      push(one.W0, one.H0);
+      for (let dw = -2; dw <= 2; dw += 2) for (let dh = -2; dh <= 2; dh += 2) push(one.W0 + dw, one.H0 + dh);
+      for (const [W0, H0] of sizes) {
+        const cx = (W0 - 1) / 2, cy = (H0 - 1) / 2, acx = (w - 1) / 2, acy = (h - 1) / 2;
+        for (let th = one.th - 0.5; th <= one.th + 0.5 + 1e-6; th += 0.5) {
+          const rad = th * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+          for (const ph of [0, 0.5]) {
+            const map = (x, y) => {
+              const dx = x - cx, dy = y - cy;
+              return [acx + co * dx - si * dy + ph, acy + si * dx + co * dy + ph];
+            };
+            const t = tryMap(W0, H0, map);
+            if (t !== null) return { text: t, note: `已按约 ${Math.abs(Math.round(th))}° 旋转还原` };
+          }
         }
       }
     }
-  }
+    return null;
+  };
+  const rotated = refine(bestImp) || refine(bestSame);
+  if (rotated) return rotated;
   return null;
 }
 function recoverWatermark(img, opt, onProgress) {
