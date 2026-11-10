@@ -1420,18 +1420,18 @@ function l2Sync(T, seed) {
     let m = 0, q = 0; for (const v of tre) { m += v; q += v * v; } m /= n * n; const sd = Math.sqrt(q / (n * n) - m * m) || 1;
     const top = [];
     for (let i = 0; i < n * n; i++) {
-        const z = (tre[i] - m) / sd;
-        if (top.length < 3 || z > top[top.length - 1].z) { top.push({ z, dx: i % n, dy: Math.floor(i / n) }); top.sort((a, b) => b.z - a.z); if (top.length > 3) top.pop(); }
+        const zs = (tre[i] - m) / sd, z = Math.abs(zs); // 负峰 = 图片被反色（负片滤镜）
+        if (top.length < 3 || z > top[top.length - 1].z) { top.push({ z, sg: zs < 0 ? -1 : 1, dx: i % n, dy: Math.floor(i / n) }); top.sort((a, b) => b.z - a.z); if (top.length > 3) top.pop(); }
     }
     return top;
 }
-function l2DecodeAt(T, seed, dx, dy) {
+function l2DecodeAt(T, seed, dx, dy, sg = 1) {
     const P = l2Patterns(seed), n = L2_T;
     const bits = new Uint8Array(L2_BITS);
     for (let k = 0; k < L2_BITS; k++) {
         const pk = P[k + 1]; let s = 0;
         for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> 1) * L2_C; const o = v * n; for (let u = 0; u < n; u++) s += T[o + u] * pk[pv + (((u - dx) & (n - 1)) >> 1)]; }
-        bits[k] = s > 0 ? 1 : 0;
+        bits[k] = s * sg > 0 ? 1 : 0;
     }
     const by = bitsToBytes(bits);
     if (((by[L2_BYTES] << 8) | by[L2_BYTES + 1]) !== crc16(by.subarray(0, L2_BYTES))) return null;
@@ -1448,7 +1448,7 @@ function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta) {
         if (top[0].z > best.z) best = { z: top[0].z, k };
         for (const pk of top) {
             if (pk.z < minZ) break;
-            const text = l2DecodeAt(T, seed, pk.dx, pk.dy);
+            const text = l2DecodeAt(T, seed, pk.dx, pk.dy, pk.sg);
             if (text !== null) return { hit: { text, z: pk.z, px, py, k, angle: theta ? +(theta * 180 / Math.PI).toFixed(2) : 0 } };
         }
     }
