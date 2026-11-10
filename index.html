@@ -2607,7 +2607,7 @@ globalThis.bilinearRestore = bilinearRestore;
 
 
 // ---- 第二层：平铺扩频图样（移植自抗截图版），抗块亮度扰动与换密钥重写 ----
-const L2_T = 128, L2_C = 64, L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2;
+const L2_T = 128, L2_C = 64, L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3;
 function crc16(bytes) {
     let c = 0xffff;
     for (const b of bytes) { c ^= b << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
@@ -2665,10 +2665,12 @@ function l2Embed(rgba, w, h, seed, text) {
                 const c = Y[y * w + x];
                 act = Math.abs(c - Y[y * w + x - 1]) + Math.abs(c - Y[y * w + x + 1]) + Math.abs(c - Y[(y - 1) * w + x]) + Math.abs(c - Y[(y + 1) * w + x]);
             }
+            // 纯白/纯黑处先让出余量，图样才不会被截掉一半；否则调色一压高光，截图背景里的图样就没了
             const mask = Math.min(1.6, 0.65 + act / 40);
-            const v = L2_ALPHA * mask * tile[(((y % L2_T) >> 1) * L2_C) + ((x % L2_T) >> 1)];
+            const amp = L2_ALPHA * mask, v = amp * tile[(((y % L2_T) >> 1) * L2_C) + ((x % L2_T) >> 1)];
+            const room = Math.min(amp * L2_ROOM, 255);
             const i = (y * w + x) * 4;
-            rgba[i] = rgba[i] + v; rgba[i + 1] = rgba[i + 1] + v; rgba[i + 2] = rgba[i + 2] + v;
+            for (let c = 0; c < 3; c++) { const b0 = Math.min(Math.max(rgba[i + c], room), 255 - room); rgba[i + c] = b0 + v; }
         }
     return kept;
 }
@@ -2686,6 +2688,10 @@ function l2Residual(rgba, w, h) {
             let r = Y[y * w + x] - s / ((x1 - x0) * (y1 - y0));
             R[y * w + x] = Math.max(-12, Math.min(12, r)); // 削掉强边缘，免得淹没图样
         }
+    // 调色压缩了反差时，图样和边缘一起变弱：按整体残差幅度自适应地再削一次边缘
+    let ma = 0; for (let i = 0; i < R.length; i++) ma += Math.abs(R[i]); ma /= R.length;
+    const lim = Math.max(1.5, Math.min(12, L2_LIMK * ma));
+    if (lim < 12) for (let i = 0; i < R.length; i++) R[i] = Math.max(-lim, Math.min(lim, R[i]));
     return R;
 }
 function l2AutoAt(R, w, h, L, axis) {
