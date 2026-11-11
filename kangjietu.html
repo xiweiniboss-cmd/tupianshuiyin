@@ -1434,12 +1434,14 @@ function l2RotCands(R, w, h) {
         if (Math.abs(th) < 0.004) th = 0;
         if (!out.some(([a, b]) => Math.abs(a - p) < 1 && Math.abs(b - th) < 0.004)) out.push([p, th]);
     };
+    // 照片纹理的自相关峰常常盖过图样的周期，但角度一般是对的：先按“只转不缩”（周期 = 图样原始周期）试这些角度
+    for (const k of pk.slice(0, 6)) add(L2_T, Math.atan2(k.y, k.x));
     for (const k of pk.slice(0, 6)) {
         const r = Math.hypot(k.x, k.y), th = Math.atan2(k.y, k.x);
         for (const d of [1, 2, 3]) add(r / d, th);           // 晶格基向量（或其倍数）
         add(r / Math.SQRT2, th - Math.PI / 4);                // 对角向量
     }
-    return out.slice(0, 16);
+    return out.slice(0, 20);
 }
 /** 二面体变换（翻转/转 90°）作用在折叠后的图块上 */
 function l2Dihedral(T, k) {
