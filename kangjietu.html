@@ -1256,7 +1256,7 @@ function l2Viterbi(soft) {
     for (let i = L - 1; i >= 0; i--) { bits[i] = s & 1; s = from[i][s]; }
     return bits.subarray(0, L2_BITS);
 }
-function l2Tile(seed, bits, g = 1, wt = null) {
+function l2Tile(seed, bits, g = 1) {
     const P = l2Patterns(seed, g), C = L2_T >> (g & 3);
     if (g >> 2) bits = l2ConvEnc(bits);
     const NB = bits.length;
@@ -1264,7 +1264,7 @@ function l2Tile(seed, bits, g = 1, wt = null) {
     const tile = new Float32Array(C * C);
     for (let i = 0; i < tile.length; i++) {
         let v = a0 * P[0][i];
-        for (let k = 0; k < NB; k++) v += (bits[k] ? a1 : -a1) * (wt ? wt[k] : 1) * P[k + 1][i];
+        for (let k = 0; k < NB; k++) v += (bits[k] ? a1 : -a1) * P[k + 1][i];
         tile[i] = v;
     }
     let m = 0, q = 0;
@@ -1281,36 +1281,12 @@ function l2PickGeo(rgba, w, h, seed, text) {
     const { bits } = l2PayloadBits(text), cb = l2ConvEnc(bits);
     const tmp = new Uint8ClampedArray(rgba);
     l2Embed(tmp, w, h, seed, text, 6);
-    return l2SelfCorr(tmp, w, h, seed, 6, cb).every(x => x > 0) ? 6 : 5;
-}
-/** 写入图在原位置读回的每个码位相关值（已按应写的比特取正负，> 0 即读对） */
-function l2SelfCorr(rgba, w, h, seed, g, cb) {
-    const T = l2Fold(l2Residual(rgba, w, h), w, h, L2_T, L2_T), sh = g & 3;
-    const P = l2Patterns(seed, g), C = L2_T >> sh, A = new Float64Array(C * C);
-    for (let v = 0; v < L2_T; v++) for (let u = 0; u < L2_T; u++) A[(v >> sh) * C + (u >> sh)] += T[v * L2_T + u];
-    const out = new Float64Array(cb.length);
-    for (let k = 0; k < cb.length; k++) { const pk = P[k + 1]; let s = 0; for (let i = 0; i < A.length; i++) s += A[i] * pk[i]; out[k] = cb[k] ? s : -s; }
-    return out;
-}
-/** 纠错格式写入时对着原图补偿：读回偏弱的码位加重、偏强的减轻（总强度不变，画质不变），
- *  把原图纹理对各码位的干扰抵消掉；迭代几轮取读回最稳的一版，没变好就用原样 */
-function l2EmbedTuned(rgba, w, h, seed, text, g) {
-    if (!(g >> 2)) return l2Embed(rgba, w, h, seed, text, g);
-    const cb = l2ConvEnc(l2PayloadBits(text).bits), n = cb.length;
-    let wt = new Float64Array(n).fill(1), best = null, bestQ = -Infinity;
-    for (let it = 0; it < 5; it++) {
-        const tmp = new Uint8ClampedArray(rgba);
-        l2Embed(tmp, w, h, seed, text, g, it ? wt : null);
-        const x = l2SelfCorr(tmp, w, h, seed, g, cb);
-        let mu = 0; for (const v of x) mu += v; mu /= n;
-        let q = 0; for (const v of x) q += (v - mu) ** 2; const sd = Math.sqrt(q / n) || 1;
-        const qual = mu / sd;
-        if (qual > bestQ) { bestQ = qual; best = it ? Float64Array.from(wt) : null; }
-        const med = Float64Array.from(x).sort()[n >> 1];
-        if (!(med > 0)) break;
-        for (let k = 0; k < n; k++) wt[k] *= Math.min(3, Math.max(0.3, Math.pow(med / Math.max(x[k], med * 0.1), 0.7)));
-    }
-    return l2Embed(rgba, w, h, seed, text, g, best);
+    const T = l2Fold(l2Residual(tmp, w, h), w, h, L2_T, L2_T);
+    const P = l2Patterns(seed, 6), C = L2_T >> 2, A = new Float64Array(C * C);
+    for (let v = 0; v < L2_T; v++) for (let u = 0; u < L2_T; u++) A[(v >> 2) * C + (u >> 2)] += T[v * L2_T + u];
+    let err = 0;
+    for (let k = 0; k < cb.length; k++) { const pk = P[k + 1]; let s = 0; for (let i = 0; i < A.length; i++) s += A[i] * pk[i]; if ((s > 0 ? 1 : 0) !== cb[k]) err++; }
+    return err === 0 ? 6 : 5;
 }
 function l2PickSh(rgba, w, h) {
     const N = w * h; let ext = 0, n = 0;
@@ -1318,9 +1294,9 @@ function l2PickSh(rgba, w, h) {
     return ext / n > 0.3 ? 1 : 2;
 }
 /** 在 RGBA 上叠加（就地修改），纹理越多的地方叠得越重一点 */
-function l2Embed(rgba, w, h, seed, text, sh = 1, wt = null) {
+function l2Embed(rgba, w, h, seed, text, sh = 1) {
     const { bits, kept } = l2PayloadBits(text);
-    const tile = l2Tile(seed, bits, sh, wt), C = L2_T >> (sh & 3);
+    const tile = l2Tile(seed, bits, sh), C = L2_T >> (sh & 3);
     const Y = new Float32Array(w * h);
     for (let i = 0; i < w * h; i++) Y[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
     for (let y = 0; y < h; y++)
@@ -1798,7 +1774,7 @@ document.getElementById("embed-btn").onclick=async (e)=>{
     if(!document.getElementById("password").value.trim()||document.getElementById("password").value.trim()==="1"){ toast("请换一个不容易猜的密钥"); return; }
     const bits=frameBitsFor(text);
     const work=new Uint8ClampedArray(source.rgba);
-    const kept=l2EmbedTuned(work,source.width,source.height,pwd,text,l2PickGeo(work,source.width,source.height,pwd,text));
+    const kept=l2Embed(work,source.width,source.height,pwd,text,l2PickGeo(work,source.width,source.height,pwd,text));
     const result=embedWatermark({rgba:work,width:source.width,height:source.height,bits,passwordImg:pwd,passwordWm:pwd,d1:p.d1,d2:p.d2,fast});
     const png=await new Promise((res,rej)=>rgbaToCanvas(result.rgba,source.width,source.height).toBlob(b=>b?res(b):rej(),"image/png"));
     const stamped=injectPngMeta(await png.arrayBuffer(), {v:2,len:result.wmSize,w:source.width,h:source.height,d1:p.d1,d2:p.d2,fast});
