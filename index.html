@@ -2664,6 +2664,12 @@ function l2Tile(seed, bits, sh = 1) {
     for (let i = 0; i < tile.length; i++) tile[i] = (tile[i] - m) / sd;
     return tile;
 }
+/** 选格子：大片纯白/纯黑（截图、文档）用 2px，调色滤镜下更稳；照片用 4px，更抗压缩和缩图 */
+function l2PickSh(rgba, w, h) {
+    const N = w * h; let ext = 0, n = 0;
+    for (let i = 0; i < N; i += 3) { const Y = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2]; if (Y >= 240 || Y <= 15) ext++; n++; }
+    return ext / n > 0.3 ? 1 : 2;
+}
 /** 在 RGBA 上叠加（就地修改），纹理越多的地方叠得越重一点 */
 function l2Embed(rgba, w, h, seed, text, sh = 1) {
     const { bits, kept } = l2PayloadBits(text);
