@@ -2608,7 +2608,8 @@ globalThis.bilinearRestore = bilinearRestore;
 
 // ---- 第二层：平铺扩频图样（移植自抗截图版），抗块亮度扰动与换密钥重写 ----
 const L2_T = 128, L2_C = 64, L2_GEOS = [1, 2, 5, 6], // 低两位：格子边长 2^sh 像素（1 = 2px，2 = 4px）；+4 = 带卷积纠错的新格式
-      L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3, L2_CODED = (L2_BITS + 6) * 2;
+      L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3, L2_CODED = (L2_BITS + 6) * 2,
+      L2_SCAN_GEOS = [1, 5, 6]; // 兜底扫描不试 4px 无纠错格式（只在 597b30a 前后线上过约一小时）
 function crc16(bytes) {
     let c = 0xffff;
     for (const b of bytes) { c ^= b << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
@@ -2798,9 +2799,11 @@ function l2Fold(R, w, h, px, py, theta) {
     const T = new Float64Array(L2_T * L2_T);
     const sx = L2_T / px, sy = L2_T / py;
     if (!theta) {
+        const cx = new Int32Array(w);
+        for (let x = 0; x < w; x++) cx[x] = Math.floor(x * sx) & (L2_T - 1);
         for (let y = 0; y < h; y++) {
-            const v = Math.floor(y * sy) & (L2_T - 1), o = y * w;
-            for (let x = 0; x < w; x++) T[v * L2_T + (Math.floor(x * sx) & (L2_T - 1))] += R[o + x];
+            const vo = (Math.floor(y * sy) & (L2_T - 1)) * L2_T, o = y * w;
+            for (let x = 0; x < w; x++) T[vo + cx[x]] += R[o + x];
         }
         return T;
     }
@@ -2885,10 +2888,16 @@ function l2SyncSpec(seed, sh = 1) {
     const r = { re, im }; _l2sync.set(ck, r); return r;
 }
 /** 同步：返回相关峰（按强度排序的前 3 个） */
-function l2Sync(T, seed, sh = 1) {
+/** T 的频谱：同一折叠图对各种格式同步时只算一次 */
+function l2Spec(T) {
+    const n = L2_T, re = Float64Array.from(T), im = new Float64Array(n * n);
+    fft2(re, im, n, false);
+    return { re, im };
+}
+function l2Sync(T, seed, sh = 1, F = null) {
     const n = L2_T, S = l2SyncSpec(seed, sh);
-    const tre = Float64Array.from(T), tim = new Float64Array(n * n);
-    fft2(tre, tim, n, false);
+    F = F || l2Spec(T);
+    const tre = Float64Array.from(F.re), tim = Float64Array.from(F.im);
     for (let i = 0; i < n * n; i++) { const a = tre[i] * S.re[i] + tim[i] * S.im[i], b = tim[i] * S.re[i] - tre[i] * S.im[i]; tre[i] = a; tim[i] = b; }
     fft2(tre, tim, n, true);
     let m = 0, q = 0; for (const v of tre) { m += v; q += v * v; } m /= n * n; const sd = Math.sqrt(q / (n * n) - m * m) || 1;
@@ -2915,13 +2924,14 @@ function l2DecodeAt(T, seed, dx, dy, sg = 1, g = 1) {
     return new TextDecoder("utf-8", { fatal: false }).decode(by.subarray(0, end));
 }
 /** 在一组周期上试：同步峰够强才解码；ks 为要试的翻转/旋转 */
-function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta) {
+function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta, geos = L2_GEOS) {
     const T0 = l2Fold(R, w, h, px, py, theta);
     let best = { z: 0 };
     for (const k of ks) {
         const T = l2Dihedral(T0, k);
-        for (const sh of L2_GEOS) {
-            const top = l2Sync(T, seed, sh);
+        const F = l2Spec(T);
+        for (const sh of geos) {
+            const top = l2Sync(T, seed, sh, F);
             if (top[0].z > best.z) best = { z: top[0].z, k };
             for (const pk of top) {
                 if (pk.z < minZ) break;
@@ -2995,7 +3005,7 @@ function l2Extract(rgba, w, h, seed, onProgress) {
     for (let p = 0.42 * L2_T; p <= 2.6 * L2_T; p *= 1.003) {
         if (p * 2 > Math.max(w, h)) break;
         if (onProgress && (++t % 20 === 0)) onProgress(t);
-        const r = l2TryAt(R, w, h, p, p, seed, [0, 1], 6);
+        const r = l2TryAt(R, w, h, p, p, seed, [0, 1], 6, 0, L2_SCAN_GEOS);
         if (r.hit) return r.hit;
         if (r.best.z >= 5) {
             for (const e of [-0.0012, -0.0006, 0.0006, 0.0012]) {
