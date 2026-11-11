@@ -2921,7 +2921,13 @@ function l2DecodeAt(T, seed, dx, dy, sg = 1, g = 1) {
     const by = bitsToBytes(bits);
     if (((by[L2_BYTES] << 8) | by[L2_BYTES + 1]) !== crc16(by.subarray(0, L2_BYTES))) return null;
     let end = L2_BYTES; while (end > 0 && by[end - 1] === 0) end--;
-    return new TextDecoder("utf-8", { fatal: false }).decode(by.subarray(0, end));
+    // 写入端只会写完整的 UTF-8 文字、尾部补 0：中间有 0、不是合法 UTF-8、或含控制字符，一律当作没读到
+    if (end === 0) return null;
+    for (let i = 0; i < end; i++) if (by[i] === 0) return null;
+    let txt;
+    try { txt = new TextDecoder("utf-8", { fatal: true }).decode(by.subarray(0, end)); } catch (e) { return null; }
+    if (/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\ufffd]/.test(txt)) return null;
+    return txt;
 }
 /** 在一组周期上试：同步峰够强才解码；ks 为要试的翻转/旋转 */
 function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta, geos = L2_GEOS) {
@@ -2934,7 +2940,7 @@ function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta, geos = L2_GEOS) {
             const top = l2Sync(T, seed, sh, F);
             if (top[0].z > best.z) best = { z: top[0].z, k };
             for (const pk of top) {
-                if (pk.z < minZ) break;
+                if (pk.z < (sh === 2 ? minZ + 1.5 : minZ)) break; // 4px 无纠错格式只在线上存在过约一小时，门槛提高
                 const text = l2DecodeAt(T, seed, pk.dx, pk.dy, pk.sg, sh);
                 if (text !== null) return { hit: { text, z: pk.z, px, py, k, sh, angle: theta ? +(theta * 180 / Math.PI).toFixed(2) : 0 } };
             }
