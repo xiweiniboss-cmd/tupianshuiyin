@@ -2607,7 +2607,8 @@ globalThis.bilinearRestore = bilinearRestore;
 
 
 // ---- 第二层：平铺扩频图样（移植自抗截图版），抗块亮度扰动与换密钥重写 ----
-const L2_T = 128, L2_C = 64, L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3;
+const L2_T = 128, L2_C = 64, L2_GEOS = [1, 2], // 图样格子边长 2^sh 像素：1 = 2px（旧图），2 = 4px（更抗缩图+压缩）
+      L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3;
 function crc16(bytes) {
     let c = 0xffff;
     for (const b of bytes) { c ^= b << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
@@ -2615,16 +2616,27 @@ function crc16(bytes) {
 }
 const _l2cache = new Map();
 /** 返回 [同步图样, 数据图样...]，每个 64×64 的 ±1 */
-function l2Patterns(seed) {
-    if (_l2cache.has(seed)) return _l2cache.get(seed);
+function l2Patterns(seed, sh = 1) {
+    const C = L2_T >> sh, ck = seed + ":" + sh;
+    if (_l2cache.has(ck)) return _l2cache.get(ck);
     const rng = mulberry32((seed ^ 0x5eed1234) >>> 0);
     const pats = [];
     for (let p = 0; p <= L2_BITS; p++) {
-        const a = new Int8Array(L2_C * L2_C);
+        const a = new Int8Array(C * C);
         for (let i = 0; i < a.length; i++) a[i] = rng() < 0.5 ? -1 : 1;
         pats.push(a);
     }
-    _l2cache.set(seed, pats);
+    // 4px 格子只有 1024 个码片，随机图样互相干扰太大：改用加扰的 Walsh 正交行，图样之间零串扰
+    if (sh >= 2) {
+        const n = C * C, mask = Int8Array.from(pats[0]), rows = [];
+        for (let r = 1; r < n && rows.length <= L2_BITS; r++) rows.push(r);
+        for (let i = rows.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [rows[i], rows[j]] = [rows[j], rows[i]]; }
+        for (let p = 0; p <= L2_BITS; p++) {
+            const a = pats[p], r = rows[p];
+            for (let i = 0; i < n; i++) { let v = r & i, c = 0; while (v) { v &= v - 1; c ^= 1; } a[i] = (c ? -1 : 1) * mask[i]; }
+        }
+    }
+    _l2cache.set(ck, pats);
     return pats;
 }
 function l2PayloadBits(text) {
@@ -2637,10 +2649,10 @@ function l2PayloadBits(text) {
     b[L2_BYTES] = c >> 8; b[L2_BYTES + 1] = c & 255;
     return { bits: bytesToBits(b), kept: s };
 }
-function l2Tile(seed, bits) {
-    const P = l2Patterns(seed);
+function l2Tile(seed, bits, sh = 1) {
+    const P = l2Patterns(seed, sh), C = L2_T >> sh;
     const a0 = Math.sqrt(0.3), a1 = Math.sqrt(0.7 / L2_BITS);
-    const tile = new Float32Array(L2_C * L2_C);
+    const tile = new Float32Array(C * C);
     for (let i = 0; i < tile.length; i++) {
         let v = a0 * P[0][i];
         for (let k = 0; k < L2_BITS; k++) v += (bits[k] ? a1 : -a1) * P[k + 1][i];
@@ -2653,9 +2665,9 @@ function l2Tile(seed, bits) {
     return tile;
 }
 /** 在 RGBA 上叠加（就地修改），纹理越多的地方叠得越重一点 */
-function l2Embed(rgba, w, h, seed, text) {
+function l2Embed(rgba, w, h, seed, text, sh = 1) {
     const { bits, kept } = l2PayloadBits(text);
-    const tile = l2Tile(seed, bits);
+    const tile = l2Tile(seed, bits, sh), C = L2_T >> sh;
     const Y = new Float32Array(w * h);
     for (let i = 0; i < w * h; i++) Y[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
     for (let y = 0; y < h; y++)
@@ -2667,7 +2679,7 @@ function l2Embed(rgba, w, h, seed, text) {
             }
             // 纯白/纯黑处先让出余量，图样才不会被截掉一半；否则调色一压高光，截图背景里的图样就没了
             const mask = Math.min(1.6, 0.65 + act / 40);
-            const amp = L2_ALPHA * mask, v = amp * tile[(((y % L2_T) >> 1) * L2_C) + ((x % L2_T) >> 1)];
+            const amp = L2_ALPHA * mask, v = amp * tile[(((y % L2_T) >> sh) * C) + ((x % L2_T) >> sh)];
             const room = Math.min(amp * L2_ROOM, 255);
             const i = (y * w + x) * 4;
             for (let c = 0; c < 3; c++) { const b0 = Math.min(Math.max(rgba[i + c], room), 255 - room); rgba[i + c] = b0 + v; }
@@ -2826,17 +2838,18 @@ function l2Dihedral(T, k) {
     return out;
 }
 const _l2sync = new Map();
-function l2SyncSpec(seed) {
-    if (_l2sync.has(seed)) return _l2sync.get(seed);
-    const P = l2Patterns(seed), n = L2_T;
+function l2SyncSpec(seed, sh = 1) {
+    const ck = seed + ":" + sh;
+    if (_l2sync.has(ck)) return _l2sync.get(ck);
+    const P = l2Patterns(seed, sh), n = L2_T, C = L2_T >> sh;
     const re = new Float64Array(n * n), im = new Float64Array(n * n);
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) re[y * n + x] = P[0][(y >> 1) * L2_C + (x >> 1)];
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) re[y * n + x] = P[0][(y >> sh) * C + (x >> sh)];
     fft2(re, im, n, false);
-    const r = { re, im }; _l2sync.set(seed, r); return r;
+    const r = { re, im }; _l2sync.set(ck, r); return r;
 }
 /** 同步：返回相关峰（按强度排序的前 3 个） */
-function l2Sync(T, seed) {
-    const n = L2_T, S = l2SyncSpec(seed);
+function l2Sync(T, seed, sh = 1) {
+    const n = L2_T, S = l2SyncSpec(seed, sh);
     const tre = Float64Array.from(T), tim = new Float64Array(n * n);
     fft2(tre, tim, n, false);
     for (let i = 0; i < n * n; i++) { const a = tre[i] * S.re[i] + tim[i] * S.im[i], b = tim[i] * S.re[i] - tre[i] * S.im[i]; tre[i] = a; tim[i] = b; }
@@ -2849,12 +2862,12 @@ function l2Sync(T, seed) {
     }
     return top;
 }
-function l2DecodeAt(T, seed, dx, dy, sg = 1) {
-    const P = l2Patterns(seed), n = L2_T;
+function l2DecodeAt(T, seed, dx, dy, sg = 1, sh = 1) {
+    const P = l2Patterns(seed, sh), n = L2_T, C = L2_T >> sh;
     const bits = new Uint8Array(L2_BITS);
     for (let k = 0; k < L2_BITS; k++) {
         const pk = P[k + 1]; let s = 0;
-        for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> 1) * L2_C; const o = v * n; for (let u = 0; u < n; u++) s += T[o + u] * pk[pv + (((u - dx) & (n - 1)) >> 1)]; }
+        for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> sh) * C; const o = v * n; for (let u = 0; u < n; u++) s += T[o + u] * pk[pv + (((u - dx) & (n - 1)) >> sh)]; }
         bits[k] = s * sg > 0 ? 1 : 0;
     }
     const by = bitsToBytes(bits);
@@ -2868,12 +2881,14 @@ function l2TryAt(R, w, h, px, py, seed, ks, minZ, theta) {
     let best = { z: 0 };
     for (const k of ks) {
         const T = l2Dihedral(T0, k);
-        const top = l2Sync(T, seed);
-        if (top[0].z > best.z) best = { z: top[0].z, k };
-        for (const pk of top) {
-            if (pk.z < minZ) break;
-            const text = l2DecodeAt(T, seed, pk.dx, pk.dy, pk.sg);
-            if (text !== null) return { hit: { text, z: pk.z, px, py, k, angle: theta ? +(theta * 180 / Math.PI).toFixed(2) : 0 } };
+        for (const sh of L2_GEOS) {
+            const top = l2Sync(T, seed, sh);
+            if (top[0].z > best.z) best = { z: top[0].z, k };
+            for (const pk of top) {
+                if (pk.z < minZ) break;
+                const text = l2DecodeAt(T, seed, pk.dx, pk.dy, pk.sg, sh);
+                if (text !== null) return { hit: { text, z: pk.z, px, py, k, sh, angle: theta ? +(theta * 180 / Math.PI).toFixed(2) : 0 } };
+            }
         }
     }
     return { best };
