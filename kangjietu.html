@@ -1274,6 +1274,20 @@ function l2Tile(seed, bits, g = 1) {
     return tile;
 }
 /** 选格子：大片纯白/纯黑（截图、文档）用 2px，调色滤镜下更稳；照片用 4px，更抗压缩和缩图 */
+/** 选写入格式：4px 纠错格式在截图和照片上都更抗压缩、抗滤镜；但排得很密的文字页会和 4px 图样打架，
+ *  截图类的图写入前先在副本上自检一遍，4px 读回有错位就退回 2px */
+function l2PickGeo(rgba, w, h, seed, text) {
+    if (l2PickSh(rgba, w, h) === 2) return 6; // 照片一直用 4px
+    const { bits } = l2PayloadBits(text), cb = l2ConvEnc(bits);
+    const tmp = new Uint8ClampedArray(rgba);
+    l2Embed(tmp, w, h, seed, text, 6);
+    const T = l2Fold(l2Residual(tmp, w, h), w, h, L2_T, L2_T);
+    const P = l2Patterns(seed, 6), C = L2_T >> 2, A = new Float64Array(C * C);
+    for (let v = 0; v < L2_T; v++) for (let u = 0; u < L2_T; u++) A[(v >> 2) * C + (u >> 2)] += T[v * L2_T + u];
+    let err = 0;
+    for (let k = 0; k < cb.length; k++) { const pk = P[k + 1]; let s = 0; for (let i = 0; i < A.length; i++) s += A[i] * pk[i]; if ((s > 0 ? 1 : 0) !== cb[k]) err++; }
+    return err === 0 ? 6 : 5;
+}
 function l2PickSh(rgba, w, h) {
     const N = w * h; let ext = 0, n = 0;
     for (let i = 0; i < N; i += 3) { const Y = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2]; if (Y >= 240 || Y <= 15) ext++; n++; }
@@ -1560,11 +1574,19 @@ function l2Extract(rgba, w, h, seed, onProgress) {
         if (r0.hit) return r0.hit;
     }
     // 任意角度旋转：从自相关峰估计网格角度，再按旋转网格折叠
+    // 先把所有候选直接试一遍，再只对同步最强的一个做细调（没水印的图不用对每个候选都爬山，省掉大半时间）
+    const near = [];
     for (const [p, th] of l2RotCands(R, w, h)) {
         if (onProgress) onProgress(++t);
         const r = l2TryAt(R, w, h, p, p, seed, all, 5, th);
         if (r.hit) return r.hit;
-        if (r.best.z >= 5) {
+        if (r.best.z >= 5) near.push({ p, th, z: r.best.z, k: r.best.k });
+    }
+    near.sort((a, b) => b.z - a.z);
+    for (const { p, th, z, k } of near.slice(0, 1)) {
+        if (onProgress) onProgress(++t);
+        {
+            const r = { best: { k, z } };
             const q = l2Refine(R, w, h, seed, r.best.k, p, p, th, r.best.z);
             if (q) return q;
             for (const ea of [-0.0025, 0, 0.0025]) for (const ep of [-0.003, 0, 0.003]) {
@@ -1574,11 +1596,17 @@ function l2Extract(rgba, w, h, seed, onProgress) {
             }
         }
     }
+    const nearT = [];
     for (const [px, py] of tries) {
         if (onProgress) onProgress(++t);
         const r = l2TryAt(R, w, h, px, py, seed, all, 5);
         if (r.hit) return r.hit;
-        if (r.best.z >= 4) {
+        if (r.best.z >= 4) nearT.push({ px, py, z: r.best.z, k: r.best.k });
+    }
+    nearT.sort((a, b) => b.z - a.z);
+    for (const { px, py, k } of nearT.slice(0, 2)) {
+        const r = { best: { k } };
+        {
             for (const ex of [-0.0015, -0.0008, 0, 0.0008, 0.0015]) for (const ey of [-0.0015, -0.0008, 0, 0.0008, 0.0015]) {
                 if (!ex && !ey) continue;
                 const q = l2TryAt(R, w, h, px * (1 + ex), py * (1 + ey), seed, [r.best.k], 4.5);
@@ -1587,15 +1615,24 @@ function l2Extract(rgba, w, h, seed, onProgress) {
         }
     }
     // 兜底：周期被图片自身纹理盖住时，按等比缩放逐档扫描（只试原向与水平翻转）
-    for (let p = 0.42 * L2_T; p <= 2.6 * L2_T; p *= 1.003) {
+    // 先按 0.6% 一档粗扫（同步峰在周期上约宽 ±0.5%，粗扫不会整段漏掉），再只在最强的几处细扫；
+    // 没水印的图粗扫完找不到像样的峰就直接结束
+    const coarse = [];
+    for (let p = 0.42 * L2_T; p <= 2.6 * L2_T; p *= 1.006) {
         if (p * 2 > Math.max(w, h)) break;
         if (onProgress && (++t % 20 === 0)) onProgress(t);
         const r = l2TryAt(R, w, h, p, p, seed, [0, 1], 6, 0, L2_SCAN_GEOS);
         if (r.hit) return r.hit;
-        if (r.best.z >= 5) {
-            for (const e of [-0.0012, -0.0006, 0.0006, 0.0012]) {
-                const q = l2TryAt(R, w, h, p * (1 + e), p * (1 + e), seed, [r.best.k], 4.5);
-                if (q.hit) return q.hit;
+        if (r.best.z >= 5) coarse.push({ p, z: r.best.z, k: r.best.k });
+    }
+    coarse.sort((a, b) => b.z - a.z);
+    for (const { p, k } of coarse.slice(0, 3)) {
+        for (const e of [-0.003, -0.002, -0.001, 0, 0.001, 0.002, 0.003]) {
+            const q = l2TryAt(R, w, h, p * (1 + e), p * (1 + e), seed, [0, 1], 4.5, 0, L2_SCAN_GEOS);
+            if (q.hit) return q.hit;
+            if (q.best.z >= 5) for (const e2 of [-0.0005, 0.0005]) {
+                const q2 = l2TryAt(R, w, h, p * (1 + e) * (1 + e2), p * (1 + e) * (1 + e2), seed, [q.best.k], 4.5);
+                if (q2.hit) return q2.hit;
             }
         }
     }
@@ -1737,7 +1774,7 @@ document.getElementById("embed-btn").onclick=async (e)=>{
     if(!document.getElementById("password").value.trim()||document.getElementById("password").value.trim()==="1"){ toast("请换一个不容易猜的密钥"); return; }
     const bits=frameBitsFor(text);
     const work=new Uint8ClampedArray(source.rgba);
-    const kept=l2Embed(work,source.width,source.height,pwd,text,4+l2PickSh(work,source.width,source.height));
+    const kept=l2Embed(work,source.width,source.height,pwd,text,l2PickGeo(work,source.width,source.height,pwd,text));
     const result=embedWatermark({rgba:work,width:source.width,height:source.height,bits,passwordImg:pwd,passwordWm:pwd,d1:p.d1,d2:p.d2,fast});
     const png=await new Promise((res,rej)=>rgbaToCanvas(result.rgba,source.width,source.height).toBlob(b=>b?res(b):rej(),"image/png"));
     const stamped=injectPngMeta(await png.arrayBuffer(), {v:2,len:result.wmSize,w:source.width,h:source.height,d1:p.d1,d2:p.d2,fast});
