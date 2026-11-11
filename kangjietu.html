@@ -1183,8 +1183,8 @@ function searchWatermark(img, opt, onProgress) {
  * 128×128 的图块（2×2 像素为一格）平铺满全图，叠加在亮度上。
  * 截图后：自相关求周期（=缩放），按周期折叠成一个图块，FFT 找裁切偏移，再逐比特相关解码。
  * 载荷 16 字节 + CRC16；不同密钥的图样彼此近似正交，所以别人用别的密钥重写盖不掉。 */
-const L2_T = 128, L2_C = 64, L2_GEOS = [1, 2], // 图样格子边长 2^sh 像素：1 = 2px（旧图），2 = 4px（更抗缩图+压缩）
-      L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3;
+const L2_T = 128, L2_C = 64, L2_GEOS = [1, 2, 5, 6], // 低两位：格子边长 2^sh 像素（1 = 2px，2 = 4px）；+4 = 带卷积纠错的新格式
+      L2_BYTES = 16, L2_BITS = (L2_BYTES + 2) * 8, L2_ALPHA = 3.2, L2_ROOM = 1.6, L2_LIMK = 3, L2_CODED = (L2_BITS + 6) * 2;
 function crc16(bytes) {
     let c = 0xffff;
     for (const b of bytes) { c ^= b << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; }
@@ -1192,22 +1192,22 @@ function crc16(bytes) {
 }
 const _l2cache = new Map();
 /** 返回 [同步图样, 数据图样...]，每个 64×64 的 ±1 */
-function l2Patterns(seed, sh = 1) {
-    const C = L2_T >> sh, ck = seed + ":" + sh;
+function l2Patterns(seed, g = 1) {
+    const ck = seed + ":" + g, ecc = g >> 2, sh = g & 3, C = L2_T >> sh, NB = ecc ? L2_CODED : L2_BITS;
     if (_l2cache.has(ck)) return _l2cache.get(ck);
-    const rng = mulberry32((seed ^ 0x5eed1234) >>> 0);
+    const rng = mulberry32((seed ^ (ecc ? 0x7a11c0de : 0x5eed1234)) >>> 0);
     const pats = [];
-    for (let p = 0; p <= L2_BITS; p++) {
+    for (let p = 0; p <= NB; p++) {
         const a = new Int8Array(C * C);
         for (let i = 0; i < a.length; i++) a[i] = rng() < 0.5 ? -1 : 1;
         pats.push(a);
     }
     // 4px 格子只有 1024 个码片，随机图样互相干扰太大：改用加扰的 Walsh 正交行，图样之间零串扰
-    if (sh >= 2) {
+    if (sh >= 2 || ecc) {
         const n = C * C, mask = Int8Array.from(pats[0]), rows = [];
-        for (let r = 1; r < n && rows.length <= L2_BITS; r++) rows.push(r);
+        for (let r = 1; r < n; r++) rows.push(r);
         for (let i = rows.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [rows[i], rows[j]] = [rows[j], rows[i]]; }
-        for (let p = 0; p <= L2_BITS; p++) {
+        for (let p = 0; p <= NB; p++) {
             const a = pats[p], r = rows[p];
             for (let i = 0; i < n; i++) { let v = r & i, c = 0; while (v) { v &= v - 1; c ^= 1; } a[i] = (c ? -1 : 1) * mask[i]; }
         }
@@ -1225,13 +1225,44 @@ function l2PayloadBits(text) {
     b[L2_BYTES] = c >> 8; b[L2_BYTES + 1] = c & 255;
     return { bits: bytesToBits(b), kept: s };
 }
-function l2Tile(seed, bits, sh = 1) {
-    const P = l2Patterns(seed, sh), C = L2_T >> sh;
-    const a0 = Math.sqrt(0.3), a1 = Math.sqrt(0.7 / L2_BITS);
+/** K=7 卷积码（133,171），码率 1/2，补 6 个尾零 */
+function l2ConvEnc(bits) {
+    const out = new Uint8Array(L2_CODED); let st = 0;
+    for (let i = 0; i < L2_BITS + 6; i++) {
+        const b = i < L2_BITS ? bits[i] : 0; st = ((st << 1) | b) & 127;
+        out[2 * i] = l2Par(st & 0o133); out[2 * i + 1] = l2Par(st & 0o171);
+    }
+    return out;
+}
+function l2Par(v) { let c = 0; while (v) { v &= v - 1; c ^= 1; } return c; }
+/** 软判决 Viterbi：soft[k] > 0 表示码位倾向 1 */
+function l2Viterbi(soft) {
+    const NS = 64, L = L2_BITS + 6;
+    let pm = new Float64Array(NS).fill(-1e18); pm[0] = 0;
+    const from = []; 
+    for (let i = 0; i < L; i++) {
+        const nm = new Float64Array(NS).fill(-1e18), fr = new Int16Array(NS);
+        for (let s0 = 0; s0 < NS; s0++) { if (pm[s0] < -1e17) continue;
+            for (let b = 0; b < (i < L2_BITS ? 2 : 1); b++) {
+                const st = ((s0 << 1) | b) & 127, ns = st & 63;
+                const m = pm[s0] + (l2Par(st & 0o133) ? soft[2 * i] : -soft[2 * i]) + (l2Par(st & 0o171) ? soft[2 * i + 1] : -soft[2 * i + 1]);
+                if (m > nm[ns]) { nm[ns] = m; fr[ns] = s0; }
+            } }
+        pm = nm; from.push(fr);
+    }
+    const bits = new Uint8Array(L); let s = 0;
+    for (let i = L - 1; i >= 0; i--) { bits[i] = s & 1; s = from[i][s]; }
+    return bits.subarray(0, L2_BITS);
+}
+function l2Tile(seed, bits, g = 1) {
+    const P = l2Patterns(seed, g), C = L2_T >> (g & 3);
+    if (g >> 2) bits = l2ConvEnc(bits);
+    const NB = bits.length;
+    const a0 = Math.sqrt(0.3), a1 = Math.sqrt(0.7 / NB);
     const tile = new Float32Array(C * C);
     for (let i = 0; i < tile.length; i++) {
         let v = a0 * P[0][i];
-        for (let k = 0; k < L2_BITS; k++) v += (bits[k] ? a1 : -a1) * P[k + 1][i];
+        for (let k = 0; k < NB; k++) v += (bits[k] ? a1 : -a1) * P[k + 1][i];
         tile[i] = v;
     }
     let m = 0, q = 0;
@@ -1249,7 +1280,7 @@ function l2PickSh(rgba, w, h) {
 /** 在 RGBA 上叠加（就地修改），纹理越多的地方叠得越重一点 */
 function l2Embed(rgba, w, h, seed, text, sh = 1) {
     const { bits, kept } = l2PayloadBits(text);
-    const tile = l2Tile(seed, bits, sh), C = L2_T >> sh;
+    const tile = l2Tile(seed, bits, sh), C = L2_T >> (sh & 3);
     const Y = new Float32Array(w * h);
     for (let i = 0; i < w * h; i++) Y[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
     for (let y = 0; y < h; y++)
@@ -1261,7 +1292,7 @@ function l2Embed(rgba, w, h, seed, text, sh = 1) {
             }
             // 纯白/纯黑处先让出余量，图样才不会被截掉一半；否则调色一压高光，截图背景里的图样就没了
             const mask = Math.min(1.6, 0.65 + act / 40);
-            const amp = L2_ALPHA * mask, v = amp * tile[(((y % L2_T) >> sh) * C) + ((x % L2_T) >> sh)];
+            const amp = L2_ALPHA * mask, v = amp * tile[(((y % L2_T) >> (sh & 3)) * C) + ((x % L2_T) >> (sh & 3))];
             const room = Math.min(amp * L2_ROOM, 255);
             const i = (y * w + x) * 4;
             for (let c = 0; c < 3; c++) { const b0 = Math.min(Math.max(rgba[i + c], room), 255 - room); rgba[i + c] = b0 + v; }
@@ -1423,7 +1454,7 @@ const _l2sync = new Map();
 function l2SyncSpec(seed, sh = 1) {
     const ck = seed + ":" + sh;
     if (_l2sync.has(ck)) return _l2sync.get(ck);
-    const P = l2Patterns(seed, sh), n = L2_T, C = L2_T >> sh;
+    const P = l2Patterns(seed, sh), n = L2_T; sh &= 3; const C = L2_T >> sh;
     const re = new Float64Array(n * n), im = new Float64Array(n * n);
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) re[y * n + x] = P[0][(y >> sh) * C + (x >> sh)];
     fft2(re, im, n, false);
@@ -1444,14 +1475,16 @@ function l2Sync(T, seed, sh = 1) {
     }
     return top;
 }
-function l2DecodeAt(T, seed, dx, dy, sg = 1, sh = 1) {
-    const P = l2Patterns(seed, sh), n = L2_T, C = L2_T >> sh;
-    const bits = new Uint8Array(L2_BITS);
-    for (let k = 0; k < L2_BITS; k++) {
-        const pk = P[k + 1]; let s = 0;
-        for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> sh) * C; const o = v * n; for (let u = 0; u < n; u++) s += T[o + u] * pk[pv + (((u - dx) & (n - 1)) >> sh)]; }
-        bits[k] = s * sg > 0 ? 1 : 0;
-    }
+function l2DecodeAt(T, seed, dx, dy, sg = 1, g = 1) {
+    const P = l2Patterns(seed, g), n = L2_T, sh = g & 3, C = L2_T >> sh, ecc = g >> 2;
+    // 先按格子把折叠图累加成 C×C，再和每个图样做点积
+    const A = new Float64Array(C * C);
+    for (let v = 0; v < n; v++) { const pv = (((v - dy) & (n - 1)) >> sh) * C, o = v * n; for (let u = 0; u < n; u++) A[pv + (((u - dx) & (n - 1)) >> sh)] += T[o + u]; }
+    const NB = ecc ? L2_CODED : L2_BITS, soft = new Float64Array(NB);
+    for (let k = 0; k < NB; k++) { const pk = P[k + 1]; let s = 0; for (let i = 0; i < A.length; i++) s += A[i] * pk[i]; soft[k] = s * sg; }
+    let bits;
+    if (ecc) { let q = 0; for (const v of soft) q += v * v; const sd = Math.sqrt(q / NB) || 1; bits = l2Viterbi(soft.map((v) => v / sd)); }
+    else bits = soft.map((v) => (v > 0 ? 1 : 0));
     const by = bitsToBytes(bits);
     if (((by[L2_BYTES] << 8) | by[L2_BYTES + 1]) !== crc16(by.subarray(0, L2_BYTES))) return null;
     let end = L2_BYTES; while (end > 0 && by[end - 1] === 0) end--;
@@ -1678,7 +1711,7 @@ document.getElementById("embed-btn").onclick=async (e)=>{
     if(!document.getElementById("password").value.trim()||document.getElementById("password").value.trim()==="1"){ toast("请换一个不容易猜的密钥"); return; }
     const bits=frameBitsFor(text);
     const work=new Uint8ClampedArray(source.rgba);
-    const kept=l2Embed(work,source.width,source.height,pwd,text,l2PickSh(work,source.width,source.height));
+    const kept=l2Embed(work,source.width,source.height,pwd,text,4+l2PickSh(work,source.width,source.height));
     const result=embedWatermark({rgba:work,width:source.width,height:source.height,bits,passwordImg:pwd,passwordWm:pwd,d1:p.d1,d2:p.d2,fast});
     const png=await new Promise((res,rej)=>rgbaToCanvas(result.rgba,source.width,source.height).toBlob(b=>b?res(b):rej(),"image/png"));
     const stamped=injectPngMeta(await png.arrayBuffer(), {v:2,len:result.wmSize,w:source.width,h:source.height,d1:p.d1,d2:p.d2,fast});
